@@ -1,4 +1,15 @@
-from numpy import int8, int16, int32, int64, float16, float32, float64, iinfo, finfo, sqrt
+from numpy import (
+    int8,
+    int16,
+    int32,
+    int64,
+    float16,
+    float32,
+    float64,
+    iinfo,
+    finfo,
+    sqrt,
+)
 from datetime import datetime, timedelta
 from time import perf_counter_ns
 from functools import wraps
@@ -24,6 +35,7 @@ from .convertion import *
 #     cls.__init__ = new_init
 #     return cls
 
+
 def time_method(method):
     @wraps(method)
     def wrapper(self, *args, **kwargs):
@@ -31,15 +43,18 @@ def time_method(method):
         result = method(self, *args, **kwargs)
         end = perf_counter_ns()
         exec_time = end - start
-        cls=type(self).__base__
+        cls = type(self).__base__
         if not hasattr(cls, "total_call_time"):
             setattr(cls, "total_call_time", 0)
         cls.total_call_time += exec_time
         return result
+
     return wrapper
+
 
 def format_time(seconds: float) -> str:
     return f"{datetime.min + timedelta(seconds=abs(seconds)):%H:%M:%S}"
+
 
 def efficient_number(num):
     # Check if the number is an integer
@@ -65,15 +80,17 @@ def efficient_number(num):
             return float32(num)
         else:
             return float64(num)
-    
+
     # Return the original number if it's not int or float
     return num
 
-def calc_throttle(throttle:float) -> int:
+
+def calc_throttle(throttle: float) -> int:
     throttle = max(0, min(1, throttle))
     return int(throttle * 2000 - 1000)
 
-def in_range(value:float, target:float, tollerance:float=1) -> bool:
+
+def in_range(value: float, target: float, tollerance: float = 1) -> bool:
     """in range, tollerance is for 1 kts
 
     Args:
@@ -84,4 +101,4 @@ def in_range(value:float, target:float, tollerance:float=1) -> bool:
     Returns:
         bool: True if value is in range
     """
-    return target-tollerance <= value <= target+tollerance
+    return target - tollerance <= value <= target + tollerance

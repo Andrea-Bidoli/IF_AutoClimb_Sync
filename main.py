@@ -10,6 +10,7 @@ from time import perf_counter
 t_init = perf_counter()
 ip, port = retrive_ip_port()
 
+
 def main_loop() -> None:
     fpl = IFFPL(aircraft.send_command("full_info"))
     autopilot: Autopilot = Autopilot(ip, port)
@@ -25,11 +26,17 @@ def main_loop() -> None:
     cruise(aircraft, autopilot, fpl)
     logger.info("Autopilot finished")
 
+
 if __name__ == "__main__":
     try:
         aircraft: Aircraft = Aircraft(ip, port)
-        register(lambda : debug_logger.info(f"n_commands {aircraft.command_sent}, {aircraft.total_call_time/1e9:.2f} seconds"))
+        register(
+            lambda: debug_logger.info(
+                f"n_commands {aircraft.command_sent}, {aircraft.total_call_time/1e9:.2f} seconds"
+            )
+        )
         main_loop()
-    except KeyboardInterrupt:...
+    except KeyboardInterrupt:
+        ...
     except Exception:
         debug_logger.error("", exc_info=True)
