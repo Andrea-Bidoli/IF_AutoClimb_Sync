@@ -17,34 +17,23 @@ class ColorFormatter(logging.Formatter):
         message = super().format(record)
         return f"{log_color}{message}{Style.RESET_ALL}"
 
+class Logger(logging.Logger):
+    def __init__(self, name: str, level: int = logging.DEBUG):
+        super().__init__(name, level)
+        self.propagate = False
+        stream = logging.StreamHandler()
+        file = logging.FileHandler(f'logs/{name}.log')
+        self.file_reset()
+        stream_formatter = ColorFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+        file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+        stream.setFormatter(stream_formatter)
+        file.setFormatter(file_formatter)
+        self.addHandler(stream)
+        self.addHandler(file)
+    
+    def file_reset(self):
+        open(f'logs/{self.name}.log', 'w').close()
+
 # Create logger
-debug_logger = logging.getLogger('Debugger')
-logger = logging.getLogger('Autopilot')
-
-# Set log level
-logger.setLevel(logging.INFO)
-debug_logger.setLevel(logging.DEBUG)
-
-# Create handlers
-stream = logging.StreamHandler()
-file = logging.FileHandler('logs/autopilot.log')
-debug_stream = logging.StreamHandler()
-debug_file = logging.FileHandler('logs/Debug.log')
-
-# Set log formatter
-formatter = ColorFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-debug_formatter = ColorFormatter('%(asctime)s - %(name)s - %(message)s')
-stream.setFormatter(formatter)
-file.setFormatter(formatter)
-debug_stream.setFormatter(debug_formatter)
-debug_file.setFormatter(debug_formatter)
-
-# Add handlers to logger
-logger.addHandler(stream)
-logger.addHandler(file)
-debug_logger.addHandler(debug_stream)
-debug_logger.addHandler(debug_file)
-
-# reset log files
-open('logs/autopilot.log', 'w').close()
-open('logs/Debug.log', 'w').close()
+debug_logger = Logger('Debugger', logging.DEBUG)
+logger = Logger('Autopilot', logging.INFO)

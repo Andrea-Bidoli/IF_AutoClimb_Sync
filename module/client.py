@@ -8,26 +8,44 @@ import asyncio as aio
 
 class IFClient:
     command_sent = 0
-    sock = None
-    is_connected = False
     manifest = None
+    total_call_time = 0
+    
+    read_converter = {
+        0: lambda x, _: unpack("<?", x)[0],
+        1: lambda x, _: unpack("<i", x)[0],
+        2: lambda x, _: unpack("<f", x)[0],
+        3: lambda x, _: unpack("<d", x)[0],
+        4: lambda x, lenght: unpack(f"<i{lenght-4}s", x)[-1].decode("utf-8"),
+        5: lambda x, _: unpack("q", x)[0],
+    }
+    
+    write_converter = {
+        0: lambda cmd, wrt, data: pack("<i??", cmd, wrt, data),
+        1: lambda cmd, wrt, data: pack("<i?i", cmd, wrt, data),
+        2: lambda cmd, wrt, data: pack("<i?f", cmd, wrt, data),
+        3: lambda cmd, wrt, data: pack("<i?d", cmd, wrt, data),
+        4: lambda cmd, wrt, data: pack(f"<i?i{len(data)}s", cmd, wrt, len(data), data),
+        5: lambda cmd, wrt, data: pack("<i?q", cmd, wrt, data),
+        -1: lambda cmd, wrt, data: pack("<i?", cmd, True),
+    }
+    
     def __init__(self, ip: str, port: int) -> None:
         self.port = port
         self.ip = ip
         self.sock = socket(AF_INET, SOCK_STREAM) if self.sock is None else self.sock
-        if not self.is_connected:
-            self.sock.connect((self.ip, self.port))
-            self.manifest = self.send_command(-1, 4)
-            with open("logs/manifest.txt", "w") as f:
-                f.write(self.manifest)
-            self.is_connected = True
+        self.sock.connect((self.ip, self.port))
+        self.manifest = self.send_command(-1, 4)
+        with open("logs/manifest.txt", "w") as f:
+            f.write(self.manifest)
+        self.is_connected = True
 
     @time_method
     def send_command(self, *args, write: bool = False, data: int = 0):
-        def recv_exact(sock: socket, lenght: int) -> bytes:
+        def recv_exact(lenght: int) -> bytes:
             data = b''
             while len(data) < lenght:
-                data += sock.recv(lenght - len(data))
+                data += self.sock.recv(lenght - len(data))
             return data
 
         IFClient.command_sent += 1
@@ -39,43 +57,20 @@ class IFClient:
                     command, Type = self.findfirst(*args)
             case _:
                 command, Type = self.findfirst(*args)
-    
+
         if not write:
             self.sock.send(pack('<i?', command, write))
-            first_response = recv_exact(self.sock, 8)
-            _, lenght = unpack("<ii", first_response)
-            second_response = recv_exact(self.sock, lenght)
-            
-            if Type == 0:
-                return unpack("<?", second_response)[0]
-            elif Type == 1:
-                return unpack("<i", second_response)[0]
-            elif Type == 2:
-                return unpack("<f", second_response)[0]
-            elif Type == 3:
-                return unpack("<d", second_response)[0]
-            elif Type == 4:
-                return unpack(f"<i{lenght-4}s", second_response)[-1].decode('utf-8')
-            elif Type == 5:
-                return unpack("<q", second_response)[0]
-        else:
-            if Type == 0:
-                self.sock.send(pack("<i??", command, write, data))
-            elif Type == 1:
-                self.sock.send(pack("<i?i", command, write, data))
-            elif Type == 2:
-                self.sock.send(pack("<i?f", command, write, data))
-            elif Type == 3:
-                self.sock.send(pack("<i?d", command, write, data))
-            elif Type == 4:
-                self.sock.send(pack(f"<i?i{len(data)}s", command, write, len(data), data))
-            elif Type == 5:
-                self.sock.send(pack("<i?q", command, write, data))
-            elif Type == -1:
-                self.sock.send(pack("<i?", command, write))
-            else:
-                raise ValueError("Invalid datatype")
 
+            first_response = recv_exact(8)
+            _, lenght = unpack("<ii", first_response)
+            
+            second_response = recv_exact(lenght)
+            self.__class__.read_converter[Type](second_response, lenght)
+
+        else:
+            byte_coomand = self.__class__.write_converter[Type](command, write, data)
+            self.sock.sendall(byte_coomand)
+            
     def findfirst(self, *args: tuple[str]) -> tuple[int, int]:
         args:list[str] = list(args)
         if "$" in args:
@@ -120,7 +115,7 @@ async def check_connection(ip, port=10112) -> str|None:
             if writer:
                 writer.close()
                 await writer.wait_closed()
-        except UnboundLocalError:
+        except:
             pass
 
 # async def udp_listener(ip: str='', port: int=15000) -> tuple[str, int]:

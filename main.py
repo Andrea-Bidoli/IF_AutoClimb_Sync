@@ -13,6 +13,7 @@ ip, port = retrive_ip_port()
 def main_loop() -> None:
     fpl = IFFPL(aircraft.send_command("full_info"))
     autopilot: Autopilot = Autopilot(ip, port)
+    input_flex = input("FLEX temperature : ")
     flex_temp = int(input("Flex temperature: "))
     try:
         takeoff(aircraft, autopilot, flex_temp)
@@ -27,6 +28,8 @@ def main_loop() -> None:
 if __name__ == "__main__":
     try:
         aircraft: Aircraft = Aircraft(ip, port)
-        register(lambda : debug_logger.info(f"n_commands {aircraft.command_sent}, {aircraft.total_call_time:.2f} seconds"))
+        register(lambda : debug_logger.info(f"n_commands {aircraft.command_sent}, {aircraft.total_call_time/1e9:.2f} seconds"))
         main_loop()
     except KeyboardInterrupt:...
+    except Exception:
+        debug_logger.error("", exc_info=True)

@@ -32,27 +32,36 @@ def retrive_airplane(icao: str) -> Airplane:
     return session.query(Airplane).filter_by(icao=icao).first()
 
 def first_add_to_db():
-    b772 = Airplane(icao="B772", climb_v1=250, climb_v2=310, climb_v3=.84, descent_v1=.84, descent_v2=310, descent_v3=250)
-    b77l = Airplane(icao="B77L", climb_v1=250, climb_v2=310, climb_v3=.84, descent_v1=.84, descent_v2=310, descent_v3=250)
-    b77w = Airplane(icao="B77W", climb_v1=250, climb_v2=310, climb_v3=.85, descent_v1=.85, descent_v2=310, descent_v3=250)
-    a339 = Airplane(icao="A339", climb_v1=250, climb_v2=300, climb_v3=.80, descent_v1=.85, descent_v2=310, descent_v3=250)
-    a333 = Airplane(icao="A333", climb_v1=250, climb_v2=300, climb_v3=.80, descent_v1=.85, descent_v2=310, descent_v3=250)
-    b788 = Airplane(icao="B788", climb_v1=250, climb_v2=310, climb_v3=.85, descent_v1=.85, descent_v2=310, descent_v3=250)
-    b789 = Airplane(icao="B789", climb_v1=250, climb_v2=310, climb_v3=.85, descent_v1=.85, descent_v2=310, descent_v3=250)
-    b78x = Airplane(icao="B78X", climb_v1=250, climb_v2=310, climb_v3=.85, descent_v1=.85, descent_v2=310, descent_v3=250)
-    a359 = Airplane(icao="A359", climb_v1=250, climb_v2=320, climb_v3=.85, descent_v1=.85, descent_v2=300, descent_v3=250)
-    a388 = Airplane(icao="A388", climb_v1=250, climb_v2=320, climb_v3=.84, descent_v1=.85, descent_v2=300, descent_v3=250)
-
-    session.add_all([b772, b77l, b77w, a339, a333, b788, b789, b78x, a359, a388])
-    session.commit()
-
+    x = [
+        Airplane(icao="B742", climb_v1=250, climb_v2=310, climb_v3=.84, descent_v1=.84, descent_v2=310, descent_v3=250, k=0.15),
+        Airplane(icao="B772", climb_v1=250, climb_v2=310, climb_v3=.84, descent_v1=.84, descent_v2=310, descent_v3=250, k=0.12),
+        Airplane(icao="B77L", climb_v1=250, climb_v2=310, climb_v3=.84, descent_v1=.84, descent_v2=310, descent_v3=250, k=0.10),
+        Airplane(icao="B77W", climb_v1=250, climb_v2=310, climb_v3=.84, descent_v1=.84, descent_v2=310, descent_v3=250, k=0.10),
+        Airplane(icao="B748", climb_v1=250, climb_v2=310, climb_v3=.84, descent_v1=.84, descent_v2=310, descent_v3=250, k=0.13),
+        Airplane(icao="B788", climb_v1=250, climb_v2=310, climb_v3=.84, descent_v1=.84, descent_v2=310, descent_v3=250, k=0.12),
+        Airplane(icao="B789", climb_v1=250, climb_v2=310, climb_v3=.84, descent_v1=.84, descent_v2=310, descent_v3=250, k=0.11),
+        Airplane(icao="B78X", climb_v1=250, climb_v2=310, climb_v3=.84, descent_v1=.84, descent_v2=310, descent_v3=250, k=0.11),
+        Airplane(icao="A339", climb_v1=250, climb_v2=300, climb_v3=.80, descent_v1=.85, descent_v2=310, descent_v3=250, k=0.24),
+        Airplane(icao="A333", climb_v1=250, climb_v2=300, climb_v3=.80, descent_v1=.85, descent_v2=310, descent_v3=250, k=0.23),
+        Airplane(icao="A359", climb_v1=250, climb_v2=320, climb_v3=.85, descent_v1=.85, descent_v2=300, descent_v3=250, k=0.25),
+        Airplane(icao="A388", climb_v1=250, climb_v2=320, climb_v3=.84, descent_v1=.85, descent_v2=300, descent_v3=250, k=0.22),
+        Airplane(icao="A320", climb_v1=250, climb_v2=300, climb_v3=.78, descent_v1=.78, descent_v2=300, descent_v3=250, k=0.20),
+        Airplane(icao="A321", climb_v1=250, climb_v2=300, climb_v3=.78, descent_v1=.78, descent_v2=300, descent_v3=250, k=0.20),
+        Airplane(icao="A318", climb_v1=250, climb_v2=300, climb_v3=.78, descent_v1=.78, descent_v2=300, descent_v3=250, k=0.18),
+        Airplane(icao="A319", climb_v1=250, climb_v2=300, climb_v3=.78, descent_v1=.78, descent_v2=300, descent_v3=250, k=0.19),
+        Airplane(icao="B738", climb_v1=250, climb_v2=300, climb_v3=.78, descent_v1=.78, descent_v2=300, descent_v3=250, k=0.18),
+        Airplane(icao="B739", climb_v1=250, climb_v2=300, climb_v3=.78, descent_v1=.78, descent_v2=300, descent_v3=250, k=0.18),
+    ]
+    map(add_to_db, x)
+    
+    
 def add_to_db(airplane: Airplane):
-    existing_row = session.query(Airplane).filter_by(icao=airplane.icao).first()
+    existing_row = session.query(type(airplane)).filter_by(icao=airplane.icao).first()
     if existing_row:
-        existing_row = airplane
+        session.merge(airplane)
     else:
         session.add(airplane)
-        session.commit()
+    session.commit()
 
 def print_table(model_class):
     """
@@ -62,7 +71,7 @@ def print_table(model_class):
         session: The SQLAlchemy session object.
         model_class: The SQLAlchemy ORM class representing the table.
     """
-    rows = session.query(model_class).all()  # Fetch all rows
+    rows = session.query(model_class).order_by(Airplane.icao).all()  # Fetch all rows
     if not rows:
         print(f"No rows found in table '{model_class.__tablename__}'.")
         return
@@ -79,5 +88,5 @@ def print_table(model_class):
 
 
 if __name__ == "__main__":
-    tmp = Airplane(icao="B739", climb_v1=250, climb_v2=280, climb_v3=.78, descent_v1=.78, descent_v2=280, descent_v3=250)
-    add_to_db(tmp)
+    # first_add_to_db()
+    print_table(Airplane)

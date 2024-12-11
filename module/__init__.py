@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 from time import perf_counter_ns
 from functools import wraps
 
+from .convertion import *
+
 # def track_all_methods_call_time(cls:object):
 #     """create a decorator that will track the total time spent in each method of a class
 #     and store it in the class attribute 'total_call_time'
@@ -71,51 +73,15 @@ def calc_throttle(throttle:float) -> int:
     throttle = max(0, min(1, throttle))
     return int(throttle * 2000 - 1000)
 
-def mach2tas_SI(mach: float, alt: float) -> float:
-    T0 = 288.15
-    gamma = 1.4
-    R = 287.05
-    L = 0.0065
-    T = T0 - L*alt
-    a = sqrt(gamma * R * T) 
-    return mach * a
+def in_range(value:float, target:float, tollerance:float=1) -> bool:
+    """in range, tollerance is for 1 kts
 
-def mach2tas_Aero(mach: float, alt: float) -> float:
-    alt = alt * 0.3048    
-    return mach2tas_SI(mach, alt) * 1.94384
+    Args:
+        value (float): get value
+        target (float): target value
+        tollerance (float, optional): tollerance. Defaults to 1.
 
-def ias2tas_SI(ias: float, alt: float) -> float:
-        return ias / sqrt(density(alt)/1.225)
-
-def ias2tas_Aero(ias: float, alt: float) -> float:
-    ias = ias * 0.514444
-    alt = alt * 0.3048
-    return ias2tas_SI(ias, alt) * 1.94384
-
-def density(z: float) -> float:
-    rho_0 = 1.225
-    T0 = 288.15
-    g = 9.80665
-    R = 287.05
-    L = 0.0065
-
-    T = T0 - L*z
-    return rho_0 * (T/T0)**(g/(R*L)-1)
-
-def knot2ms(knot: float) -> float:
-    return knot/1.944
-
-def ms2knot(ms: float) -> float:
-    return ms*1.944
-
-def ft2m(ft: float) -> float:
-    return ft*0.3048
-
-def m2ft(m: float) -> float:
-    return m/0.3048
-
-def ms2fpm(ms: float) -> float:
-    return ms*196.85
-
-def fpm2ms(fpm: float) -> float:
-    return fpm/196.85
+    Returns:
+        bool: True if value is in range
+    """
+    return target-tollerance <= value <= target+tollerance

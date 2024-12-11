@@ -1,4 +1,4 @@
-from module import format_time, fpm2ms, ft2m, knot2ms, m2ft
+from module import m2ft, fpm2ms, knot2ms, ft2m, in_range, format_time
 from numpy import arcsin, arctan2, radians, sin, sign, tan
 from module.FlightPlan import IFFPL, Fix, dist_to_fix
 from module.aircraft import Aircraft, Autopilot
@@ -8,28 +8,73 @@ from module.logger import logger
 from itertools import pairwise
 from time import sleep
 
-
 dummy_fix = Fix("None", -1, -1, -1, -1)
 
 def calc_α(aircraft:Aircraft):
     # calculate angle of attack
     return arcsin(aircraft.vs / aircraft.tas)
 
+def calc_γ(aircraft:Aircraft):
+    # calculate slipstream angle
+    aircraft.tas
+    
+
 def takeoff(aircraft: Aircraft, autopilot: Autopilot, DTO:int=1) -> None:
     if not aircraft.is_on_ground: return
+    TO_setting: float = 0
+    k = None
     try:
         k = aircraft.airplane.k
-        if DTO >= aircraft.OAT:
-            DTO = (100 - k*(DTO-aircraft.OAT))/100
-        elif DTO > 2:
-            raise ValueError("Aircraft don't support FLEX TEMP")
-        else:
-            DTO = (100-DTO*10)/100
+        if DTO >= aircraft.OAT and k is not None:
+            TO_setting = (100 - k*(DTO-aircraft.OAT))/100
     except AttributeError:...
 
+    if DTO > 2 and k is None:
+        raise ValueError("Aircraft don't support FLEX TEMP")
+    elif k is None:
+        TO_setting = (100-DTO*10)/100
+
     while aircraft.n1 < .5 or (not aircraft.is_on_runway and aircraft.is_on_ground): sleep(1)
+    autopilot.Throttle = TO_setting
     logger.info(f"Starting takeoff: {aircraft.n1_target:.2f}")
-    autopilot.Throttle = DTO
+
+
+def climb_velocity(aircraft: Aircraft, autopilot: Autopilot) -> bool:
+    if (aircraft.airplane is None): return False
+    if (
+        aircraft.msl >= ft2m(10_000) and
+        not autopilot.SpdMode and
+        not in_range(aircraft.ias, target_speed := knot2ms(aircraft.airplane.climb_v2), knot2ms(5))
+    ):
+        # seem to work, but need to deep test
+        if (autopilot.SpdOn):
+            autopilot.SpdOn = False
+        if (autopilot.Spd != target_speed):
+            autopilot.Spd = target_speed
+        if (in_range(aircraft.ias, target_speed, knot2ms(5)) and aircraft.spd_change < 1):
+            if (aircraft.n1_target > 0.9):
+                autopilot.Vs -= fpm2ms(100)
+                return True
+            elif (aircraft.n1_target < 0.9):
+                autopilot.Throttle = autopilot.Throttle + 0.1
+            elif (aircraft.spd_change > 1 and aircraft.n1_target <= 0.9):
+                autopilot.Throttle = autopilot.Throttle - 0.1
+    elif (
+        autopilot.SpdMode and
+        in_range(aircraft.mach, (target_speed := aircraft.airplane.climb_v3), 0.01)
+    ):
+        # it 'loop' from mach reach to mach not reach
+        if (autopilot.SpdOn):
+            autopilot.SpdOn = False
+        if (aircraft.mach < target_speed):
+            if aircraft.n1_target > 0.9:
+                autopilot.Vs -= fpm2ms(100)
+            elif aircraft.n1_target < 0.9:
+                autopilot.Throttle = autopilot.Throttle + 0.1
+            elif aircraft.spd_change > 1 and aircraft.n1_target < 0.9:
+                autopilot.Throttle = autopilot.Throttle - 0.1
+    elif (not autopilot.SpdOn): autopilot.SpdOn = True
+    return False
 
 def climbing(aircraft:Aircraft, autopilot: Autopilot, fpl: IFFPL):
     def find_climb_wps(fpl:IFFPL) -> Generator[Fix, None, None]:
@@ -39,22 +84,6 @@ def climbing(aircraft:Aircraft, autopilot: Autopilot, fpl: IFFPL):
             else:
                 
                 break
-
-    def change_spd(target_spd: float):
-        if autopilot.SpdOn:
-            autopilot.SpdOn = False
-        if autopilot.Spd != target_spd:
-            autopilot.Spd = target_spd if autopilot.SpdMode else knot2ms(target_spd)
-        spd = aircraft.ias if not autopilot.SpdMode else aircraft.mach
-        if spd < target_spd:
-            if aircraft.n1_target > 0.9 and aircraft.accel < 1:
-                autopilot.Vs -= fpm2ms(100)
-            elif aircraft.n1_target < 0.9 and aircraft.accel < 1:
-                autopilot.Throttle += 0.1
-            elif aircraft.n1_target < 0.9 and aircraft.accel > 1:
-                autopilot.Throttle -= 0.1
-        else:
-            autopilot.SpdOn = True
     
     climb_wps = find_climb_wps(fpl)
     waypoint = next(climb_wps, dummy_fix)
@@ -65,26 +94,14 @@ def climbing(aircraft:Aircraft, autopilot: Autopilot, fpl: IFFPL):
             if waypoint.altitude > 0:
                 autopilot.Alt = waypoint.altitude
             continue
-        if aircraft.accel < 0 and not autopilot.SpdMode and not autopilot.SpdOn:
+        if aircraft.spd_change < 0 and not autopilot.SpdMode and not autopilot.SpdOn:
             autopilot.Vs -= fpm2ms(100)
             sleep(1)
             continue
-        
-        # if aircraft.msl >= ft2m(10_000) and not autopilot.SpdMode and aircraft.ias < knot2ms(aircraft.airplane.climb_v2):
-        #     if aircraft.send_command("landing_lights_switch", "$"):
-        #         aircraft.send_command("landing_lights_switch", "$", write=True, data=False)
-        #     try:
-        #         change_spd(aircraft.airplane.climb_v2)
-        #         sleep(1)
-        #         continue
-        #     except AttributeError:...
-        # elif autopilot.SpdMode and aircraft.mach < aircraft.airplane.climb_v3:
-        #     try:
-        #         change_spd(aircraft.airplane.climb_v3)
-        #         sleep(1)
-        #         continue
-        #     except AttributeError: ...
-
+        # change_spd part
+        if aircraft.airplane is not None:
+            if climb_velocity(aircraft, autopilot):
+                continue
         delta_alt = waypoint.altitude - aircraft.msl
         dist = aircraft.dist_to_next
         angle = arctan2(delta_alt, dist)
@@ -142,9 +159,9 @@ def descending(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
     #     spd = aircraft.mach if autopilot.SpdMode else aircraft.ias
     #     if spd < target_speed:
     #         return
-    #     if aircraft.n1_target <= 0 and aircraft.accel > 0:
+    #     if aircraft.n1_target <= 0 and aircraft.spd_change > 0:
     #             autopilot.Vs += fpm2ms(100)
-    #     elif aircraft.n1_target > 0 and aircraft.accel > 0:
+    #     elif aircraft.n1_target > 0 and aircraft.spd_change > 0:
     #             autopilot.Throttle -= 0.1
     #     else:
     #         autopilot.SpdOn = True
@@ -161,4 +178,4 @@ def descending(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
             autopilot.Vs = aircraft.tas*sin(descend_angle)
             waypoint = next(waypoints, dummy_fix)
         # TODO: add speed reduction in function of Alt(using model.database) and distance to destination
-        # TODO: check optimal value to accel to count as positive (how many decimal places)
+        # TODO: check optimal value to spd_change to count as positive (how many decimal places)

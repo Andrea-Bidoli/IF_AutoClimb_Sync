@@ -1,7 +1,8 @@
 from .database import Airplane, retrive_airplane
-from .client import IFClient
+from numpy import radians, array, arcsin
 from .logger import debug_logger
-from numpy import radians
+from numpy.linalg import norm
+from .client import IFClient
 
 class Aircraft(IFClient):
     def __init__(self, ip: str, port: int) -> None:
@@ -67,6 +68,12 @@ class Aircraft(IFClient):
 
     @property
     def accel(self) -> float:
+        x = self.send_command("acceleration", "x")
+        y = self.send_command("acceleration", "y")
+        z = self.send_command("acceleration", "z")
+        return norm(array([x, y, z]))
+    @property
+    def spd_change(self) -> float:
         return self.send_command("airspeed_change_rate")
     @property
     def OAT(self) -> float:
@@ -85,6 +92,19 @@ class Aircraft(IFClient):
     def elevator(self, value: int) -> None:
         value = max(-1000, min(value, 1000))
         self.send_command(2, 1, 'axes', write=True, data=value)
+
+    @property
+    def α(self) -> float:
+        return arcsin(self.vs/self.tas)
+    @property
+    def γ(self) -> float:
+        """positive angle (wind left to right)
+
+        Returns:
+            float: slipstream angle
+        """
+        crosswind = self.send_command("crosswind_component")
+        return arcsin(crosswind/self.tas)
 
 class Autopilot(IFClient):
     def __init__(self, ip: str, port: int) -> None:
@@ -167,7 +187,6 @@ class Autopilot(IFClient):
         self.send_command("bank", "on", write=True, data=value)
 
 id_2_icao = {
-    
     "Airbus A220-300": "BCS3",
     "Airbus A319": "A319",
     "Airbus A320": "A320",
@@ -176,16 +195,16 @@ id_2_icao = {
     "Airbus A330 - 900": "A339",
     "Airbus A350": "A359",
     "Airbus A380": "A388",
-    "Boeing 737 - 700": "B737",
-    "Boeing 737 - 800": "B738",
+    "Boeing 737-700": "B737",
+    "Boeing 737-800": "B738",
     "Boeing 737-900": "B739",
-    "Boeing 747 - 200": "B742",
-    "Boeing 747 - 400": "B744",
-    "Boeing 747 - 8": "B748",
-    "Boeing 757 - 200": "B752",
-    "Boeing 777 - 200ER": "B772",
-    "Boeing 777 - 200LR": "B77L",
-    "Boeing 777 - 300ER": "B77W",
+    "Boeing 747-200": "B742",
+    "Boeing 747-400": "B744",
+    "Boeing 747-8": "B748",
+    "Boeing 757-200": "B752",
+    "Boeing 777-200ER": "B772",
+    "Boeing 777-200LR": "B77L",
+    "Boeing 777-300ER": "B77W",
     "Boeing 777F": "B77F",
     "Boeing 787-8": "B788",
     "Boeing 787-9": "B789",
