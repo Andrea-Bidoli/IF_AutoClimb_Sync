@@ -1,5 +1,9 @@
-from numpy import sqrt
+from __future__ import annotations
+from numpy import sqrt, sign
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .aircraft import Aircraft
 
 def mach2tas_SI(mach: float, alt: float) -> float:
     T0 = 288.15
@@ -59,3 +63,12 @@ def ms2fpm(ms: float) -> float:
 
 def fpm2ms(fpm: float) -> float:
     return fpm / 196.85
+
+def calc_delta_throttle(current: float, target: float, aircraft: 'Aircraft') -> float:
+    delta = round(target - current, 2)
+    if delta == 0 or aircraft.n1_target >= 0.9:
+        return 0
+    elif abs(delta) > knot2ms(0.1) or aircraft.n1_target <= 0.8:
+        return 0.1*sign(delta)
+    else:
+        return sign(delta) * 0.01

@@ -13,8 +13,7 @@ from numpy import (
 from datetime import datetime, timedelta
 from time import perf_counter_ns
 from functools import wraps
-
-from .convertion import *
+from math import isclose
 
 # def track_all_methods_call_time(cls:object):
 #     """create a decorator that will track the total time spent in each method of a class
@@ -36,6 +35,8 @@ from .convertion import *
 #     return cls
 
 
+
+
 def time_method(method):
     @wraps(method)
     def wrapper(self, *args, **kwargs):
@@ -43,7 +44,9 @@ def time_method(method):
         result = method(self, *args, **kwargs)
         end = perf_counter_ns()
         exec_time = end - start
-        cls = type(self).__base__
+        
+        cls = type(self).__base__ if type(self).__base__ is not object else type(self)
+
         if not hasattr(cls, "total_call_time"):
             setattr(cls, "total_call_time", 0)
         cls.total_call_time += exec_time
@@ -101,4 +104,4 @@ def in_range(value: float, target: float, tollerance: float = 1) -> bool:
     Returns:
         bool: True if value is in range
     """
-    return target - tollerance <= value <= target + tollerance
+    return isclose(value, target, rel_tol=tollerance)

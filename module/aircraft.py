@@ -3,7 +3,7 @@ from numpy import radians, array, arcsin
 from .logger import debug_logger
 from numpy.linalg import norm
 from .client import IFClient
-
+from .FlightPlan import Fix
 
 class Aircraft(IFClient):
     def __init__(self, ip: str, port: int) -> None:
@@ -109,13 +109,20 @@ class Aircraft(IFClient):
         return self.send_command("is_on_ground")
 
     @property
+    def pos(self) -> Fix:
+        name = self.send_command("aircraft/0/name")
+        lat = self.send_command("0/latitude")
+        lon = self.send_command("0/longitude")
+        return Fix(name, self.msl, lat, lon, -1)
+
+    @property
     def elevator(self) -> int:
-        return self.send_command(2, 1, "axes")
+        return self.send_command("axes", "0", "value")
 
     @elevator.setter
     def elevator(self, value: int) -> None:
         value = max(-1000, min(value, 1000))
-        self.send_command(2, 1, "axes", write=True, data=value)
+        self.send_command("axes", "0", "value", write=True, data=value)
 
     @property
     def α(self) -> float:
@@ -244,6 +251,7 @@ id_2_icao = {
     "Airbus A350": "A359",
     "Airbus A380": "A388",
     "Boeing 737-700": "B737",
+    "Boeing 737-8 MAX": "B38M",
     "Boeing 737-800": "B738",
     "Boeing 737-900": "B739",
     "Boeing 747-200": "B742",

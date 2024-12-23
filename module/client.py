@@ -1,11 +1,10 @@
+from __future__ import annotations
 from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from re import Match, compile, escape, MULTILINE
 from struct import pack, unpack
 from typing import Generator
 from . import time_method
-from json import loads
-import asyncio as aio
-
 
 class IFClient:
     command_sent = 0
@@ -34,12 +33,11 @@ class IFClient:
     def __init__(self, ip: str, port: int) -> None:
         self.port = port
         self.ip = ip
-        self.sock = socket(AF_INET, SOCK_STREAM) if self.sock is None else self.sock
+        self.sock = socket(AF_INET, SOCK_STREAM)
         self.sock.connect((self.ip, self.port))
         self.manifest = self.send_command(-1, 4)
         with open("logs/manifest.txt", "w") as f:
             f.write(self.manifest)
-        self.is_connected = True
 
     @time_method
     def send_command(self, *args, write: bool = False, data: int = 0):
@@ -66,11 +64,11 @@ class IFClient:
             _, lenght = unpack("<ii", first_response)
 
             second_response = recv_exact(lenght)
-            self.__class__.read_converter[Type](second_response, lenght)
+            return self.__class__.read_converter[Type](second_response, lenght)
 
         else:
             byte_coomand = self.__class__.write_converter[Type](command, write, data)
-            self.sock.sendall(byte_coomand)
+            return self.sock.sendall(byte_coomand)
 
     def findfirst(self, *args: tuple[str]) -> tuple[int, int]:
         args: list[str] = list(args)
@@ -104,22 +102,17 @@ class IFClient:
 
 
 def retrive_ip_port():
-    return aio.run(check_connection_from_file())
+    return check_connection_from_file(), 10112
 
-
-async def check_connection(ip, port=10112) -> str | None:
-    try:
-        _, writer = await aio.open_connection(ip, port)
-        return ip
-    except Exception:
-        return None
-    finally:
+def check_connection(ip, port=10112) -> str | None:
+    with socket(AF_INET, SOCK_STREAM) as sock:
         try:
-            if writer:
-                writer.close()
-                await writer.wait_closed()
-        except:
-            pass
+            sock.connect((ip, port))
+            return ip
+        except TimeoutError:
+            return None
+        except InterruptedError:
+            return None
 
 
 # async def udp_listener(ip: str='', port: int=15000) -> tuple[str, int]:
@@ -135,32 +128,25 @@ async def check_connection(ip, port=10112) -> str | None:
 #             return '', -1
 
 
-async def check_connection_from_file(port=10112):
+def check_connection_from_file(port=10112):
     with open("logs/ip.log", "a+") as f:
         f.seek(0)
         ips = f.read().split("\n")
         ips = filter(lambda x: bool(x), ips)
         f.seek(0, 2)
-        tasks = [check_connection(ip, port) for ip in ips]
-        results = await aio.gather(*tasks)
-        results = list(filter(lambda x: x is not None, results))
-        if len(results) == 0:
-            with socket(AF_INET, SOCK_DGRAM) as sock:
-                server_address = ("", 15000)
-                sock.bind(server_address)
-                data, _ = sock.recvfrom(4096)
-                if data:
-                    data = loads(data.decode("utf-8"))
-                    ip, port = (
-                        next(
-                            filter(lambda x: x.startswith("192."), data["addresses"]),
-                            None,
-                        ),
-                        data["port"],
-                    )
-            f.write(f"{ip}\n")
-        elif len(results) > 1:
-            raise ValueError("Multiple connections")
-        else:
-            ip = results[0]
-        return ip, port
+
+        with ThreadPoolExecutor(3) as executor:
+            thread_list = [executor.submit(check_connection, ip, port) for ip in ips]
+            for future in as_completed(thread_list):
+                result = future.result()
+                if result:
+                    return result
+        
+        with socket(AF_INET, SOCK_DGRAM) as sock:
+            sock.bind(("",15000))
+            # sock.settimeout(3)
+            data, _ = sock.recvfrom(1024)
+            ip = compile(r"192\.\d{1,3}\.\d{1,3}\.\d{1,3}").search(data.decode("utf-8")).group()
+            f.write(ip + "\n")
+            return ip
+        return None

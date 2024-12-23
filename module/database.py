@@ -1,4 +1,3 @@
-from calendar import c
 from sqlalchemy import create_engine, Column, Integer, String, Float
 from sqlalchemy.orm import sessionmaker, declarative_base
 from dataclasses import dataclass
@@ -44,7 +43,7 @@ def first_add_to_db():
             descent_v1=0.84,
             descent_v2=310,
             descent_v3=250,
-            k=0.15,
+            k=0.15
         ),
         Airplane(
             icao="B772",
@@ -54,7 +53,7 @@ def first_add_to_db():
             descent_v1=0.84,
             descent_v2=310,
             descent_v3=250,
-            k=0.12,
+            k=0.12
         ),
         Airplane(
             icao="B77L",
@@ -64,7 +63,7 @@ def first_add_to_db():
             descent_v1=0.84,
             descent_v2=310,
             descent_v3=250,
-            k=0.10,
+            k=0.10
         ),
         Airplane(
             icao="B77W",
@@ -74,7 +73,7 @@ def first_add_to_db():
             descent_v1=0.84,
             descent_v2=310,
             descent_v3=250,
-            k=0.10,
+            k=0.10
         ),
         Airplane(
             icao="B748",
@@ -84,7 +83,7 @@ def first_add_to_db():
             descent_v1=0.84,
             descent_v2=310,
             descent_v3=250,
-            k=0.13,
+            k=0.13
         ),
         Airplane(
             icao="B788",
@@ -94,7 +93,7 @@ def first_add_to_db():
             descent_v1=0.84,
             descent_v2=310,
             descent_v3=250,
-            k=0.12,
+            k=0.12
         ),
         Airplane(
             icao="B789",
@@ -104,7 +103,7 @@ def first_add_to_db():
             descent_v1=0.84,
             descent_v2=310,
             descent_v3=250,
-            k=0.11,
+            k=0.11
         ),
         Airplane(
             icao="B78X",
@@ -114,7 +113,7 @@ def first_add_to_db():
             descent_v1=0.84,
             descent_v2=310,
             descent_v3=250,
-            k=0.11,
+            k=0.11
         ),
         Airplane(
             icao="A339",
@@ -124,7 +123,7 @@ def first_add_to_db():
             descent_v1=0.85,
             descent_v2=310,
             descent_v3=250,
-            k=0.24,
+            k=0.24
         ),
         Airplane(
             icao="A333",
@@ -134,7 +133,7 @@ def first_add_to_db():
             descent_v1=0.85,
             descent_v2=310,
             descent_v3=250,
-            k=0.23,
+            k=0.23
         ),
         Airplane(
             icao="A359",
@@ -144,7 +143,7 @@ def first_add_to_db():
             descent_v1=0.85,
             descent_v2=300,
             descent_v3=250,
-            k=0.25,
+            k=0.25
         ),
         Airplane(
             icao="A388",
@@ -154,7 +153,7 @@ def first_add_to_db():
             descent_v1=0.85,
             descent_v2=300,
             descent_v3=250,
-            k=0.22,
+            k=0.22
         ),
         Airplane(
             icao="A320",
@@ -164,7 +163,7 @@ def first_add_to_db():
             descent_v1=0.78,
             descent_v2=300,
             descent_v3=250,
-            k=0.20,
+            k=0.20
         ),
         Airplane(
             icao="A321",
@@ -174,7 +173,7 @@ def first_add_to_db():
             descent_v1=0.78,
             descent_v2=300,
             descent_v3=250,
-            k=0.20,
+            k=0.20
         ),
         Airplane(
             icao="A318",
@@ -184,7 +183,7 @@ def first_add_to_db():
             descent_v1=0.78,
             descent_v2=300,
             descent_v3=250,
-            k=0.18,
+            k=0.18
         ),
         Airplane(
             icao="A319",
@@ -194,7 +193,7 @@ def first_add_to_db():
             descent_v1=0.78,
             descent_v2=300,
             descent_v3=250,
-            k=0.19,
+            k=0.19
         ),
         Airplane(
             icao="B738",
@@ -204,7 +203,7 @@ def first_add_to_db():
             descent_v1=0.78,
             descent_v2=300,
             descent_v3=250,
-            k=0.18,
+            k=0.18
         ),
         Airplane(
             icao="B739",
@@ -214,10 +213,20 @@ def first_add_to_db():
             descent_v1=0.78,
             descent_v2=300,
             descent_v3=250,
-            k=0.18,
+            k=0.18
+        ),
+        Airplane(
+            icao="B38M",
+            climb_v1=250,
+            climb_v2=280,
+            climb_v3=0.78,
+            descent_v1=0.78,
+            descent_v2=280,
+            descent_v3=250,
+            k=0.16
         ),
     ]
-    map(add_to_db, x)
+    for airp in x: add_to_db(airp)
 
 
 def add_to_db(airplane: Airplane):
@@ -244,14 +253,17 @@ def print_table(model_class):
 
     # Print column headers
     column_names = [column.name for column in model_class.__table__.columns]
-    print(" | ".join(column_names))
-    print("-" * (len(column_names) * 15))
+    header = " | ".join(column_names)
+    print(header)
+    print("-" * len(header))
 
+    spacing = [len(i) for i in header.split("|")]
+
+    row_data = ([str(getattr(row, column)) for column in column_names] for row in rows)
     # Print rows
-    for row in rows:
-        row_data = [str(getattr(row, column)) for column in column_names]
-        print(" | ".join(row_data))
 
+    for row in row_data:
+        print("|".join(map(lambda x: f"{x:^{spacing[row.index(x)]}}", row)))
 
 if __name__ == "__main__":
     # first_add_to_db()
