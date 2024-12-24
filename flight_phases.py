@@ -4,7 +4,7 @@ from numpy import arcsin, arctan2, radians, sin, sign
 from module.FlightPlan import IFFPL, Fix, dist_to_fix
 from module.aircraft import Aircraft, Autopilot
 from datetime import datetime, timedelta
-from module import calc_delta_throttle
+from module.convertion import calc_delta_throttle
 from collections.abc import Generator
 from module.logger import logger, debug_logger
 from time import sleep
