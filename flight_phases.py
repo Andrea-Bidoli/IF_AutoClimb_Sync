@@ -1,4 +1,5 @@
-from module import m2ft, fpm2ms, knot2ms, ft2m, in_range, format_time
+from module.convertion import m2ft, fpm2ms, knot2ms, ft2m
+from module import in_range, format_time
 from numpy import arcsin, arctan2, radians, sin, sign
 from module.FlightPlan import IFFPL, Fix, dist_to_fix
 from module.aircraft import Aircraft, Autopilot
