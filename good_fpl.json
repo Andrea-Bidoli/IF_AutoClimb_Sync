@@ -1,0 +1,429 @@
+{
+    "bearing": 258.19363,
+    "desiredTrack": 258.08612,
+    "distanceToDestination": 247.03671,
+    "distanceToNext": 17.739017,
+    "etaToDestination": 1.3378938e+17,
+    "etaToNext": 1.33789365e+17,
+    "eteToDestination": 34.22685,
+    "eteToNext": 2.4577346,
+    "track": 258.05093,
+    "waypointName": "BZA",
+    "icao": "BZA",
+    "nextWaypointLatitude": 32.768063,
+    "nextWaypointLongitude": -114.6028,
+    "xTrackErrorDistance": -61.63347,
+    "xTrackErrorAngle": -0.10751343,
+    "totalDistance": 0,
+    "nextWaypointIndex": 0,
+    "detailedInfo": {
+        "flightPlanId": "12dd8a70-3091-4878-a7e9-744fd0c0c957",
+        "waypoints": [
+            "KPHX",
+            "FYRBD1",
+            "MOHAK",
+            "HOGGZ",
+            "BZA",
+            "HEEDS",
+            "IPL",
+            "JLI",
+            "VISTA3",
+            "I24R",
+            "KLAX"
+        ],
+        "flightPlanType": 0,
+        "flightId": "37fd977b-95bb-4b45-b5db-491c99e71199",
+        "lastUpdate": "2024-12-17 18:43:13Z",
+        "flightPlanItems": [
+            {
+                "name": null,
+                "type": 0,
+                "children": null,
+                "identifier": "KPHX",
+                "altitude": -1,
+                "location": {
+                    "Latitude": 33.433579762776695,
+                    "Longitude": -112.01183573404948,
+                    "AltitudeLight": 345.947998046875
+                }
+            },
+            {
+                "name": "FYRBD1",
+                "type": 0,
+                "children": [
+                    {
+                        "name": "FUTEP",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "FUTEP",
+                        "altitude": 6800,
+                        "location": {
+                            "Latitude": 33.43474278,
+                            "Longitude": -111.87278444,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "AZCRD",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "AZCRD",
+                        "altitude": 9800,
+                        "location": {
+                            "Latitude": 33.39417194,
+                            "Longitude": -111.83751361,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "USEYE",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "USEYE",
+                        "altitude": 11100,
+                        "location": {
+                            "Latitude": 33.35029278,
+                            "Longitude": -111.86834944,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "MASVE",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "MASVE",
+                        "altitude": 12500,
+                        "location": {
+                            "Latitude": 33.35502056,
+                            "Longitude": -111.91973111,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "OAKLI",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "OAKLI",
+                        "altitude": 15000,
+                        "location": {
+                            "Latitude": 33.36389917,
+                            "Longitude": -112.01419222,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "FYRBD",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "FYRBD",
+                        "altitude": 27900,
+                        "location": {
+                            "Latitude": 32.95639778,
+                            "Longitude": -112.67389222,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "JUDTH",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "JUDTH",
+                        "altitude": 35500,
+                        "location": {
+                            "Latitude": 32.81640028,
+                            "Longitude": -113.68833944,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "TOC",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "TOC",
+                        "altitude": 36000,
+                        "location": {
+                            "Latitude": 32.80537,
+                            "Longitude": -113.766547,
+                            "AltitudeLight": 0
+                        }
+                    }
+                ],
+                "identifier": "FYRBD1",
+                "altitude": 0,
+                "location": {
+                    "Latitude": 0,
+                    "Longitude": 0,
+                    "AltitudeLight": 0
+                }
+            },
+            {
+                "name": "MOHAK",
+                "type": 0,
+                "children": null,
+                "identifier": null,
+                "altitude": -1,
+                "location": {
+                    "Latitude": 32.77583444,
+                    "Longitude": -113.97195972,
+                    "AltitudeLight": 0
+                }
+            },
+            {
+                "name": "HOGGZ",
+                "type": 0,
+                "children": null,
+                "identifier": null,
+                "altitude": -1,
+                "location": {
+                    "Latitude": 32.77473611,
+                    "Longitude": -114.06917,
+                    "AltitudeLight": 0
+                }
+            },
+            {
+                "name": null,
+                "type": 0,
+                "children": null,
+                "identifier": "BZA",
+                "altitude": -1,
+                "location": {
+                    "Latitude": 32.76806083333334,
+                    "Longitude": -114.60279472222221,
+                    "AltitudeLight": 0
+                }
+            },
+            {
+                "name": "HEEDS",
+                "type": 0,
+                "children": null,
+                "identifier": null,
+                "altitude": -1,
+                "location": {
+                    "Latitude": 32.76028278,
+                    "Longitude": -115.00752306,
+                    "AltitudeLight": 0
+                }
+            },
+            {
+                "name": null,
+                "type": 0,
+                "children": null,
+                "identifier": "IPL",
+                "altitude": -1,
+                "location": {
+                    "Latitude": 32.74863666666666,
+                    "Longitude": -115.50835833333333,
+                    "AltitudeLight": 0
+                }
+            },
+            {
+                "name": null,
+                "type": 0,
+                "children": null,
+                "identifier": "JLI",
+                "altitude": -1,
+                "location": {
+                    "Latitude": 33.14029583333333,
+                    "Longitude": -116.58584333333333,
+                    "AltitudeLight": 0
+                }
+            },
+            {
+                "name": "VISTA3",
+                "type": 1,
+                "children": [
+                    {
+                        "name": "TOD",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "TOD",
+                        "altitude": -1,
+                        "location": {
+                            "Latitude": 33.159865,
+                            "Longitude": -116.743385,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "VISTA",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "VISTA",
+                        "altitude": 27700,
+                        "location": {
+                            "Latitude": 33.21890722,
+                            "Longitude": -117.23444972,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "CYNDE",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "CYNDE",
+                        "altitude": 26400,
+                        "location": {
+                            "Latitude": 33.22890972,
+                            "Longitude": -117.31918361,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": null,
+                        "type": 0,
+                        "children": null,
+                        "identifier": "OCN",
+                        "altitude": 24800,
+                        "location": {
+                            "Latitude": 33.240563333333334,
+                            "Longitude": -117.41752222222223,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "SHIVE",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "SHIVE",
+                        "altitude": 17200,
+                        "location": {
+                            "Latitude": 33.26612056,
+                            "Longitude": -117.86641167,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "CWARD",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "CWARD",
+                        "altitude": 14900,
+                        "location": {
+                            "Latitude": 33.38390139,
+                            "Longitude": -117.90917722,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "BAYER",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "BAYER",
+                        "altitude": 13200,
+                        "location": {
+                            "Latitude": 33.46363833,
+                            "Longitude": -117.93807611,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "MADOW",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "MADOW",
+                        "altitude": 9900,
+                        "location": {
+                            "Latitude": 33.62336028,
+                            "Longitude": -117.99639,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "TOZEK",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "TOZEK",
+                        "altitude": 8300,
+                        "location": {
+                            "Latitude": 33.70334556,
+                            "Longitude": -118.02530528,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": null,
+                        "type": 0,
+                        "children": null,
+                        "identifier": "SLI",
+                        "altitude": 6600,
+                        "location": {
+                            "Latitude": 33.78308,
+                            "Longitude": -118.05472583333334,
+                            "AltitudeLight": 0
+                        }
+                    }
+                ],
+                "identifier": "VISTA3",
+                "altitude": 0,
+                "location": {
+                    "Latitude": 0,
+                    "Longitude": 0,
+                    "AltitudeLight": 0
+                }
+            },
+            {
+                "name": "I24R",
+                "type": 2,
+                "children": [
+                    {
+                        "name": "MERCE",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "MERCE",
+                        "altitude": 4000,
+                        "location": {
+                            "Latitude": 33.98057889,
+                            "Longitude": -118.11807667,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "KOBEE",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "KOBEE",
+                        "altitude": 2200,
+                        "location": {
+                            "Latitude": 33.96474833,
+                            "Longitude": -118.27529278,
+                            "AltitudeLight": 0
+                        }
+                    },
+                    {
+                        "name": "RW24R",
+                        "type": 0,
+                        "children": null,
+                        "identifier": "RW24R",
+                        "altitude": -1,
+                        "location": {
+                            "Latitude": 33.95211410522461,
+                            "Longitude": -118.40192413330078,
+                            "AltitudeLight": 0
+                        }
+                    }
+                ],
+                "identifier": "I24R",
+                "altitude": 0,
+                "location": {
+                    "Latitude": 0,
+                    "Longitude": 0,
+                    "AltitudeLight": 0
+                }
+            },
+            {
+                "name": null,
+                "type": 0,
+                "children": null,
+                "identifier": "KLAX",
+                "altitude": 2600,
+                "location": {
+                    "Latitude": 33.9431209564209,
+                    "Longitude": -118.40881633758545,
+                    "AltitudeLight": 38.10000228881836
+                }
+            }
+        ]
+    },
+    "result": 0,
+    "type": "Fds.IFAPI.APIFlightPlan"
+}
