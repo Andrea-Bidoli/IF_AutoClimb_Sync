@@ -23,11 +23,13 @@ class Fix:
     _index: int
     dist_to_prev: float = field(init=False, default=0)
     angle: float = field(init=False, default=None)
+    fly_phase = None # 0 = climb 1 = cruise 2 = descent
 
     def __post_init__(self):
         self.lat = radians(self.lat)
         self.lon = radians(self.lon)
-
+    def get_altitude(self):
+        return int(round(self.alt))
     def __repr__(self):
         return f"name={self.name} alt={m2ft(self.alt)}\nlat={self.lat} lon={self.lon}\nindex={self._index} dist={self.dist_to_prev}\nalpha={degrees(self.angle)if self.angle is not None else None}"
 
@@ -86,13 +88,17 @@ class IFFPL(deque[Fix]):
                                 if child["name"] is None
                                 else child["name"]
                             )
-                            alt = (
-                                max(
-                                    child["altitude"],
-                                    child["location"]["AltitudeLight"],
-                                )
-                                * 0.3048
-                            )
+                            if child["altitude"] == -1:
+                                alt = -1
+                            else:
+                                alt = child["altitude"]*0.3048
+                            # alt = (
+                            #     max(
+                            #         child["altitude"],
+                            #         child["location"]["AltitudeLight"],
+                            #     )
+                            #     * 0.3048
+                            # )
                             tmp = Fix(
                                 name,
                                 alt,
@@ -104,10 +110,14 @@ class IFFPL(deque[Fix]):
                             index += 1
                     else:
                         name = obj["identifier"] if obj["name"] == None else obj["name"]
-                        alt = alt = (
-                            max(obj["altitude"], obj["location"]["AltitudeLight"])
-                            * 0.3048
-                        )
+                        if obj["altitude"] == -1:
+                            alt = -1
+                        else:
+                                alt = 0.3048*obj["altitude"]
+                        # alt = (
+                        #     max(obj["altitude"], obj["location"]["AltitudeLight"])
+                        #     * 0.3048
+                        # )
                         tmp = Fix(
                             name,
                             alt,
@@ -214,3 +224,30 @@ def dist_to_fix(fix: Fix, fpl: IFFPL, aircraft: "Aircraft") -> float:
         return aircraft.dist_to_next
     else:
         return dist_fix_fix(fpl[aircraft.next_index], fix, fpl) + aircraft.dist_to_next
+
+def add_flightPhase_to_FIX_points(json_data):
+    fix_points = list(IFFPL(json_data)) # fix_points is a dequeue
+    fix_points.pop(0) # rimosso per evitare spike primo valore
+
+    # removing the undefined points (altitude = -1)
+    fix_points_clean = []
+    for point in fix_points:
+        if(point.get_altitude() != -1):
+            fix_points_clean.append(point)
+
+    ratios = []
+    altitudes = []
+    distances = []
+    tot_distance = 0
+
+    for i in range(0, len(fix_points_clean)-1):
+        if(fix_points_clean[i].get_altitude() != 0):
+            distance = dist_fix_fix(fix_points_clean[i], fix_points_clean[i+1], fix_points_clean)
+            delta_altitude = abs(fix_points_clean[i+1].get_altitude() - fix_points_clean[i].get_altitude())
+            ratio = delta_altitude / distance
+            tot_distance = tot_distance + distance
+            distances.append(tot_distance)
+            ratios.append(ratio)
+            altitudes.append(fix_points_clean[i].get_altitude())
+    
+    return [distances, ratios, altitudes]
