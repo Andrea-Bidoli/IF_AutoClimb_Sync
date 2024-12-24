@@ -25,11 +25,11 @@ def plot_fpl(fpl, ratios, threshold):
             
             # Assign color based on fly_phase
             if FIX_point.fly_phase == 0:
-                colors.append('green')
+                colors.append('b')
             elif FIX_point.fly_phase == 1:
-                colors.append('blue')  # Fly phase 1 is pink
+                colors.append('green')
             elif FIX_point.fly_phase == 2:
-                colors.append('red')
+                colors.append('b')
             else:
                 colors.append('black')  # Other phases are blue
 
@@ -39,13 +39,13 @@ def plot_fpl(fpl, ratios, threshold):
     ythreshold = [threshold] * len(ratios)  # Create a list with the same length as ratios
 
     # Plot the first dataset as a scatter plot
-    ax[0].scatter(xaxis, ratios, color=colors, marker='o')
+    ax[0].scatter(xaxis, ratios, color=colors, marker='+')
     ax[0].plot(xaxis, ythreshold, linestyle="--", color='r')
-    ax[0].set_ylabel('alt/dist ratio')
+    ax[0].set_ylabel('altitude/distance ratio')
     ax[0].grid()
 
     # Plot the second dataset
-    ax[1].plot(xaxis, yaltitude, marker='+', linestyle='-', color='black')
+    ax[1].plot(xaxis, yaltitude, marker='o', linestyle='-', color='b')
     ax[1].set_ylabel('altitude [m]')
     ax[1].grid()
 
