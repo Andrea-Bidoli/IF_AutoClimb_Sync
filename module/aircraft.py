@@ -117,7 +117,7 @@ class Aircraft(IFClient):
 
     @property
     def elevator(self) -> int:
-        return self.send_command("axes", "0", "value")
+        return self.send_command("axes/pitch")
 
     @elevator.setter
     def elevator(self, value: int) -> None:
@@ -125,8 +125,27 @@ class Aircraft(IFClient):
         self.send_command("axes", "0", "value", write=True, data=value)
 
     @property
+    def trim(self) -> int:
+        return self.send_command("axes/elevator_trim")
+
+    @trim.setter
+    def trim(self, value: int) -> None:
+        if -100 < value < 100:
+            value *= 10
+        value = max(-1000, min(value, 1000))
+        self.send_command("axes/elevator_trim", write=True, data=value)
+
+    @property
+    def Landing_gear_toggle(self) -> bool:
+        self.send_command("LandingGear", write=True)
+        
+    @property
+    def landing_gear_status(self) -> None:
+        return self.send_command("landing_gear/animation_state")
+
+    @property
     def α(self) -> float:
-        return arcsin(self.vs / self.tas)
+        return self.pitch - arcsin(self.vs / self.tas)
 
     @property
     def γ(self) -> float:

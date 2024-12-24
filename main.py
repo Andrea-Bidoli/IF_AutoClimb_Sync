@@ -1,8 +1,8 @@
-from module.aircraft import Aircraft, Autopilot
-from module.FlightPlan import IFFPL
-from module.client import retrive_ip_port
-from module.logger import logger, debug_logger
 from flight_phases import climbing, cruise, takeoff
+from module.aircraft import Aircraft, Autopilot
+from module.logger import logger, debug_logger
+from module.client import retrive_ip_port
+from module.FlightPlan import IFFPL
 from atexit import register
 
 

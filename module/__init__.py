@@ -8,7 +8,6 @@ from numpy import (
     float64,
     iinfo,
     finfo,
-    sqrt,
 )
 from datetime import datetime, timedelta
 from time import perf_counter_ns
@@ -33,8 +32,6 @@ from math import isclose
 #                 setattr(cls, attr, wrapped_func)
 #     cls.__init__ = new_init
 #     return cls
-
-
 
 
 def time_method(method):

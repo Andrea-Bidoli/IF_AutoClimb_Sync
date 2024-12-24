@@ -1,25 +1,15 @@
 from module.convertion import m2ft, fpm2ms, knot2ms, ft2m
-from module import in_range, format_time
-from numpy import arcsin, arctan2, radians, sin, sign
 from module.FlightPlan import IFFPL, Fix, dist_to_fix
-from module.aircraft import Aircraft, Autopilot
-from datetime import datetime, timedelta
 from module.convertion import calc_delta_throttle
-from collections.abc import Generator
+from module.aircraft import Aircraft, Autopilot
 from module.logger import logger, debug_logger
+from numpy import arctan2, radians, sin, sign
+from module import in_range, format_time
+from datetime import datetime, timedelta
+from collections.abc import Generator
 from time import sleep
 
 dummy_fix = Fix("None", -1, -1, -1, -1)
-
-
-def calc_α(aircraft: Aircraft):
-    # calculate angle of attack
-    return arcsin(aircraft.vs / aircraft.tas)
-
-
-def calc_γ(aircraft: Aircraft):
-    # calculate slipstream angle
-    aircraft.tas
 
 
 def takeoff(aircraft: Aircraft, autopilot: Autopilot) -> None:
@@ -46,7 +36,9 @@ def takeoff(aircraft: Aircraft, autopilot: Autopilot) -> None:
         sleep(1)
     autopilot.Throttle = TO_setting
     logger.info(f"Starting takeoff: {aircraft.n1_target:.2f}")
-
+    while aircraft.is_on_ground or aircraft.vs < fpm2ms(100): sleep(1)
+    aircraft.Landing_gear_toggle
+   
 
 def change_spd(target_speed: int, autopilot: Autopilot, aircraft: Aircraft) -> Generator[bool, float, None]:
     target_speed = knot2ms(target_speed)
@@ -73,21 +65,6 @@ def change_spd(target_speed: int, autopilot: Autopilot, aircraft: Aircraft) -> G
         debug_logger.error(e, exc_info=True)
     finally:
         logger.warning("Change speed function ended")
-
-# def change_spd(autopilot: Autopilot, aircraft: Aircraft) -> bool:
-#     if autopilot.SpdOn:
-#         autopilot.SpdOn = False
-#     if autopilot.Spd != target_speed:
-#         autopilot.Spd = target_speed
-#     if not in_range(aircraft.ias, target_speed, knot2ms(5) if not autopilot.SpdMode else 0.01) and aircraft.accel < 1:
-#         if aircraft.n1_target > 0.9:
-#             autopilot.Vs -= fpm2ms(100)
-#             return True
-#         elif aircraft.n1_target < 0.9:
-#             autopilot.Throttle = autopilot.Throttle + calc_delta_throttle(aircraft.n1_target, 0.9)
-#         elif aircraft.accel > 1 and aircraft.n1_target <= 0.9:
-#             autopilot.Throttle = autopilot.Throttle + calc_delta_throttle(aircraft.n1_target, 0.9)
-#     return False
 
 
 def climb_velocity(aircraft: Aircraft, autopilot: Autopilot) -> bool:
@@ -165,6 +142,7 @@ def cruise(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL) -> None:
             )
             autopilot.Alt = waypoint.alt
             autopilot.Vs = target_vs
+            aircraft.trim = aircraft.elevator
             continue
 
         if ete_fix > 5 * 60:
@@ -210,5 +188,8 @@ def descending(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
             autopilot.Alt = waypoint.alt
             autopilot.Vs = aircraft.tas * sin(descend_angle)
             waypoint = next(waypoints, dummy_fix)
+
+        if aircraft.msl <= ft2m(2000) and aircraft.landing_gear_status <= 0:
+            aircraft.Landing_gear_toggle
         # TODO: add speed reduction in function of Alt(using model.database) and distance to destination
         # TODO: check optimal value to accel to count as positive (how many decimal places)

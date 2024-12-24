@@ -1,15 +1,14 @@
 from numpy import arccos, arctan2, cos, degrees, radians, sin, cross, array, pi
+from .convertion import m2ft, ft2m, decimal_to_dms
 from dataclasses import dataclass, field
 from itertools import pairwise, islice
 from collections.abc import Generator
+# from collections import deque
 from numpy.linalg import norm
-from collections import deque
 from json import loads, dump
-from .convertion import m2ft
 from re import findall
 
 from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
     from .aircraft import Aircraft
 
@@ -22,14 +21,17 @@ class Fix:
     lon: float
     _index: int
     dist_to_prev: float = field(init=False, default=0)
-    angle: float = field(init=False, default=None)
+    ratio: float = field(init=False, default=None)
 
     def __post_init__(self):
         self.lat = radians(self.lat)
         self.lon = radians(self.lon)
 
-    def __repr__(self):
-        return f"name={self.name} alt={m2ft(self.alt)}\nlat={self.lat} lon={self.lon}\nindex={self._index} dist={self.dist_to_prev}\nalpha={degrees(self.angle)if self.angle is not None else None}"
+    def __str__(self):
+        return  f"name={self.name} alt={m2ft(self.alt)}\n"+\
+                f"lat={decimal_to_dms(degrees(self.lat))} lon={decimal_to_dms(degrees(self.lon))}\n"+\
+                f"index={self._index} dist={self.dist_to_prev}\n"+\
+                f"ratio={self.ratio if self.ratio is not None else None}"
 
     def __format__(self, format_spec: str) -> str:
         def matching(i: tuple[str, str]):
@@ -53,86 +55,59 @@ class Fix:
         return self._index
 
 
-class IFFPL(deque[Fix]):
+class IFFPL(list[Fix]):
     def __new__(cls, json_data: str | dict, write: bool = False) -> "IFFPL":
-        if isinstance(json_data, (str, bytearray, bytes)):
-            json_data: dict = loads(json_data)
-        elif not isinstance(json_data, dict):
+        if not isinstance(json_data, (str, bytearray, bytes, dict)):
             raise ValueError("json_data must be a string or a dictionary")
-        if json_data["detailedInfo"] is None:
+        elif loads(json_data)["detailedInfo"] is None:
             print("No flight plan defined")
             return None
 
         instance = super().__new__(cls)
-        instance.json_data = json_data
         return instance
+
+    def set_list(self, json_list: list) -> None:
+        for obj in json_list:
+            if obj["children"] is not None:
+                self.set_list(obj["children"])
+                continue
+            name = obj["identifier"] if obj["name"] == None else obj["name"]
+            alt = ft2m(obj["location"]["AltitudeLight"]) if obj["location"]["AltitudeLight"] != 0 else ft2m(obj["altitude"])
+            self.append(
+                Fix(
+                    name,
+                    alt,
+                    obj["location"]["Latitude"],
+                    obj["location"]["Longitude"],
+                    self._index
+                )
+            )
+            self._index += 1
 
     def __init__(
         self, json_data: str | dict | None = None, write: bool = False
     ) -> None:
         super().__init__()
+        self.json_data = loads(json_data) if isinstance(json_data, (str, bytes, bytearray)) else json_data
         self._index = 0
         if write:
             with open("logs/fpl.json", "w") as f:
                 dump(self.json_data, f, indent=4)
-        for key, value in self.json_data["detailedInfo"].items():
+        for key in self.json_data["detailedInfo"]:
             if key == "flightPlanItems":
-                index = 0
-                for obj in value:
-                    if obj["children"] is not None:
-                        for child in obj["children"]:
-                            name = (
-                                child["identifier"]
-                                if child["name"] is None
-                                else child["name"]
-                            )
-                            alt = (
-                                max(
-                                    child["altitude"],
-                                    child["location"]["AltitudeLight"],
-                                )
-                                * 0.3048
-                            )
-                            tmp = Fix(
-                                name,
-                                alt,
-                                child["location"]["Latitude"],
-                                child["location"]["Longitude"],
-                                index,
-                            )
-                            self.append(tmp)
-                            index += 1
-                    else:
-                        name = obj["identifier"] if obj["name"] == None else obj["name"]
-                        alt = alt = (
-                            max(obj["altitude"], obj["location"]["AltitudeLight"])
-                            * 0.3048
-                        )
-                        tmp = Fix(
-                            name,
-                            alt,
-                            obj["location"]["Latitude"],
-                            obj["location"]["Longitude"],
-                            index,
-                        )
-                        self.append(tmp)
-                        index += 1
-        self.post_init()
-        n = self.json_data["nextWaypointIndex"]
-        self.rotate(n)
+                self.set_list(self.json_data["detailedInfo"]["flightPlanItems"])
+        self.__post_init__()
 
-    def post_init(self):
+    def __post_init__(self):
         for fix_1, fix_2 in pairwise(self):
             fix_2.dist_to_prev = cosine_law(fix_1, fix_2)
 
-        fixs = filter(lambda x: x.alt > 0, list(self))
+        fixs = filter(lambda x: x.alt > 0, self)
         for fix_1, fix_2 in pairwise(fixs):
-            fix_2.angle = arctan2(
-                fix_2.alt - fix_1.alt, dist_fix_fix(fix_1, fix_2, self)
-            )
+            fix_2.ratio = (fix_2.alt - fix_1.alt) / dist_fix_fix(fix_1, fix_2, self)
 
     def find_stepclimb_wps(self) -> Generator[Fix, None, None]:
-        tmp = filter(lambda x: x.alt > 0 and x.angle is not None, self)
+        tmp = filter(lambda x: x.alt > 0 and x.ratio is not None, self)
         yield from tmp
 
     def find_climb_wps(self) -> Generator[Fix, None, None]:
@@ -140,13 +115,12 @@ class IFFPL(deque[Fix]):
         if toc is None:
             return
         yield from islice(self, toc.index + 1)
-
+        
     def find_descent_wps(self) -> Generator[Fix, None, None]:
-        tod = next(filter(lambda x: x.name.lower() == "tod", self))
+        tod = next(filter(lambda x: x.name.lower() == "tod", self), None)
         if tod is None:
             return
         yield from islice(self, tod.index, len(self))
-
 
 def angle_between_3_fix(fix1: Fix, fix2: Fix, fix3: Fix):
     p1 = array(
@@ -189,6 +163,7 @@ def get_bearing(fix1: Fix, fix2: Fix) -> float:
     Y = cos(fix1.lat) * sin(fix2.lat) - sin(fix1.lat) * cos(fix2.lat) * cos(delta_lon)
     return arctan2(X, Y)
 
+
 def cosine_law(fix1: Fix, fix2: Fix) -> float:
     phi_1 = fix1.lat
     phi_2 = fix2.lat
@@ -210,7 +185,8 @@ def dist_fix_fix(start_fix: Fix, end_fix: Fix, waypoint_route: IFFPL[Fix]) -> fl
 
 
 def dist_to_fix(fix: Fix, fpl: IFFPL, aircraft: "Aircraft") -> float:
-    if fpl.index(fix) == aircraft.next_index:
+    if fix.index == aircraft.next_index:
         return aircraft.dist_to_next
     else:
-        return dist_fix_fix(fpl[aircraft.next_index], fix, fpl) + aircraft.dist_to_next
+        fix_1 = next(filter(lambda x: x.index == aircraft.next_index, fpl))
+        return dist_fix_fix(fix_1, fix, fpl) + aircraft.dist_to_next

@@ -1,10 +1,10 @@
-from __future__ import annotations
 from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from re import Match, compile, escape, MULTILINE
 from struct import pack, unpack
 from typing import Generator
 from . import time_method
+from .logger import logger
 
 class IFClient:
     command_sent = 0
@@ -102,6 +102,7 @@ class IFClient:
 
 
 def retrive_ip_port():
+    logger.info("Retriving IP and port...")
     return check_connection_from_file(), 10112
 
 def check_connection(ip, port=10112) -> str | None:
@@ -141,10 +142,10 @@ def check_connection_from_file(port=10112):
                 result = future.result()
                 if result:
                     return result
-        
+
         with socket(AF_INET, SOCK_DGRAM) as sock:
             sock.bind(("",15000))
-            # sock.settimeout(3)
+            sock.settimeout(6)
             data, _ = sock.recvfrom(1024)
             ip = compile(r"192\.\d{1,3}\.\d{1,3}\.\d{1,3}").search(data.decode("utf-8")).group()
             f.write(ip + "\n")

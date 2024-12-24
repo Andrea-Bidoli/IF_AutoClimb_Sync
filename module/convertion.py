@@ -1,4 +1,3 @@
-from __future__ import annotations
 from numpy import sqrt, sign
 
 from typing import TYPE_CHECKING
@@ -64,6 +63,7 @@ def ms2fpm(ms: float) -> float:
 def fpm2ms(fpm: float) -> float:
     return fpm / 196.85
 
+
 def calc_delta_throttle(current: float, target: float, aircraft: 'Aircraft') -> float:
     delta = round(target - current, 2)
     if delta == 0 or aircraft.n1_target >= 0.9:
@@ -72,3 +72,10 @@ def calc_delta_throttle(current: float, target: float, aircraft: 'Aircraft') -> 
         return 0.1*sign(delta)
     else:
         return sign(delta) * 0.01
+    
+
+def decimal_to_dms(decimal: float) -> str:
+    degrees = int(decimal)
+    minutes = int((decimal - degrees) * 60)
+    seconds = ((decimal - degrees) * 60 - minutes) * 60
+    return f"{degrees}° {minutes}' {seconds:.2f}''"
