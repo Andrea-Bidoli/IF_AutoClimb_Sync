@@ -228,42 +228,69 @@ def dist_to_fix(fix: Fix, fpl: IFFPL, aircraft: "Aircraft") -> float:
         return dist_fix_fix(fpl[aircraft.next_index], fix, fpl) + aircraft.dist_to_next
 
 def add_flightPhase_to_fpl(json_data):
-    fix_points = list(IFFPL(json_data)) # fix_points is a dequeue
-    fix_points.pop(0) # rimosso per evitare spike primo valore
-
-    # removing the undefined points (altitude = -1)
-    fix_points_clean = []
-    for point in fix_points:
-        if(point.get_altitude() != -1):
-            fix_points_clean.append(point)
+    fix_points = list(IFFPL(json_data)) # IFFPL(json_data) is a dequeue
+    #fix_points.pop(0) # rimosso per evitare spike primo valore
     
-    fix_points_clean.append(fix_points_clean[-1]) # adding last point to permit the calculation of the last ratio value (0 by definition) by calculating the difference with himself
-
+    #fix_points_clean.append(fix_points_clean[-1]) # adding last point to permit the calculation of the last ratio value (0 by definition) by calculating the difference with himself
     ratios = []
 
-    # creating the ratios[] vector
-    for i in range(0, len(fix_points_clean)-1):
-        if(fix_points_clean[i].get_altitude() != 0):
-            distance = max(dist_fix_fix(fix_points_clean[i], fix_points_clean[i+1], fix_points_clean), 1) # max to avoid 0/0 when comparing last fix point with himself (same distance)
-            delta_altitude = abs(fix_points_clean[i+1].get_altitude() - fix_points_clean[i].get_altitude())
-            ratio = delta_altitude / distance
-            ratios.append(ratio)
+    # STEP 1: creating the ratios[] vector
+    # i-th element is the altitude/distance ratio between i and i+1
+    
+    # TODO try/catch to manage empty or <2 elements fix_points
+    i = 0
+    j = 1
+    while j < len(fix_points):
+        if fix_points[i].get_altitude() != -1: # skipping undefined points
+            # finding next point with altitude != -1
+            found_next_FIX = False
+            while(not found_next_FIX):
+                if j < len(fix_points):
+                    if fix_points[j].get_altitude() != -1:
+                        found_next_FIX = True
+                    else:
+                        j += 1
+                else:
+                    break
+            if j >= len(fix_points):
+                break
+            distance_j_i = max(dist_fix_fix(fix_points[j], fix_points[i], fix_points), 1) # max to avoid 0/0 when comparing last fix point with himself (same distance)
+            delta_altitude = abs(fix_points[j].get_altitude() - fix_points[i].get_altitude())
+            ratios.append(delta_altitude / distance_j_i)
+            i = j
+            j = i + 1
+        else:
+            i += 1
+            j += 1
+
+    # if odd ratios elements add last ratio supposing landing as the last point
+    if len(ratios) % 2 != 0:
+        ratios.append(abs(fix_points[i].get_altitude() - 0) / distance_j_i)
 
     # lower than this thresold we assume a cruise phase otherwise it is climb or descent phase 
     # TODO find a deterministic way to choose the threshold value
     threshold = sum(ratios) / (len(ratios) * 3) # 1/3 of the avg ratio, manually choosen value
 
+    # STEP 2: modifying the fly_phase attribute of every FIX POINT according to the corresponding ratio
+    # TODO implement into the previous iteration through fix_points[]
     skipped_points = 0
-    for i in range(0, len(fix_points)):
-        if(fix_points[i].get_altitude() == -1): # null points
+    flag_descent = False
+    fix_points[0].set_fly_phase(0) # first point is of course climb phase
+    
+    for i in range(0, len(fix_points)-1):
+        if(fix_points[i].get_altitude() == -1): # skipping null points
             skipped_points += 1
         else:
-            if(ratios[i-skipped_points] <= threshold ):
-                fix_points[i].set_fly_phase(1) # 1 = cruise
+            if flag_descent:
+                fix_points[i].set_fly_phase(2) # always descent
             else:
-                if(i <= len(fix_points)/2):
-                    fix_points[i].set_fly_phase(0) # 0 = climb
+                if ratios[i-skipped_points] < threshold:
+                    fix_points[i].set_fly_phase(1) # 1 = cruise
                 else:
-                    fix_points[i].set_fly_phase(2)
+                    if i < len(fix_points)/2:
+                        fix_points[i].set_fly_phase(0) # 0 = climb
+                    else:
+                        fix_points[i].set_fly_phase(2) # 2 = descent
+                        flag_descent = True
 
     return fix_points, ratios, threshold

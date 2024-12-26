@@ -77,7 +77,7 @@
                     }
                 ],
                 "identifier": "JUTES3",
-                "altitude": 0,
+                "altitude": -1,
                 "location": {
                     "Latitude": 0,
                     "Longitude": 0,
@@ -318,7 +318,7 @@
                     }
                 ],
                 "identifier": "BRUEN2",
-                "altitude": 0,
+                "altitude": -1,
                 "location": {
                     "Latitude": 0,
                     "Longitude": 0,

@@ -7,31 +7,33 @@ from atexit import register
 from module import FlightPlan
 import json
 import matplotlib.pyplot as plt #remove later
-
-import matplotlib.pyplot as plt
+import numpy
 
 def plot_fpl(fpl, ratios, threshold):
-
     yaltitude = []
     xaxis = []
     colors = []  # List to store colors for each ratio point
+    altitude_colors = []  # List to store colors for each altitude point
     tot_dist = 0
 
     for FIX_point in fpl:
         tot_dist += FIX_point.dist_to_prev
-        if FIX_point.get_altitude() != -1:
+        if FIX_point.get_altitude() != -1: 
             xaxis.append(tot_dist)
             yaltitude.append(FIX_point.get_altitude())
-            
-            # Assign color based on fly_phase
+            # Assign color for altitudes based on fly_phase
             if FIX_point.fly_phase == 0:
+                altitude_colors.append('b')
                 colors.append('b')
-            elif FIX_point.fly_phase == 1:
+            elif FIX_point.fly_phase == 1: # cruise
+                altitude_colors.append('green')
                 colors.append('green')
             elif FIX_point.fly_phase == 2:
+                altitude_colors.append('b')
                 colors.append('b')
             else:
-                colors.append('black')  # Other phases are blue
+                altitude_colors.append('black')
+                colors.append('black')
 
     # Create a figure and axes
     fig, ax = plt.subplots(2, 1, figsize=(10, 10))  # 2 rows, 1 column
@@ -39,13 +41,14 @@ def plot_fpl(fpl, ratios, threshold):
     ythreshold = [threshold] * len(ratios)  # Create a list with the same length as ratios
 
     # Plot the first dataset as a scatter plot
-    ax[0].scatter(xaxis, ratios, color=colors, marker='+')
-    ax[0].plot(xaxis, ythreshold, linestyle="--", color='r')
+    ax[0].scatter(xaxis[:len(ratios)], ratios, color=colors, marker='+')
+    ax[0].plot(xaxis[:len(ratios)], ythreshold, linestyle="--", color='r')
     ax[0].set_ylabel('altitude/distance ratio')
     ax[0].grid()
 
-    # Plot the second dataset
-    ax[1].plot(xaxis, yaltitude, marker='o', linestyle='-', color='b')
+    # Plot the second dataset as a line plot
+    for i in range(len(xaxis) - 1):
+        ax[1].plot(xaxis[i:i+2], yaltitude[i:i+2], color=altitude_colors[i], marker='+')
     ax[1].set_ylabel('altitude [m]')
     ax[1].grid()
 
@@ -54,9 +57,6 @@ def plot_fpl(fpl, ratios, threshold):
 
     # Display the plots
     plt.show()
-
-
-
 
 def main_loop() -> None:
     aircraft: Aircraft = Aircraft(ip, port)
@@ -76,15 +76,14 @@ def main_loop() -> None:
 
 if __name__ == "__main__":
 
-        register(lambda: debug_logger.info(f"n_commands {Aircraft.command_sent}, {Aircraft.total_call_time/1e9:.2f} seconds"))
-        #main_loop()
-
-        ip, port = retrive_ip_port()
-        client = IFClient(ip, port)
-        fpl_analyzed, ratios, threshold = FlightPlan.add_flightPhase_to_fpl(client.send_command('full_info')) # fpl_analyzed is a deque of FIX points
-
-        # with open("fpl.json", "r") as json_data_file:
-        # json_data = json.load(json_data_file)
-        # fpl_analyzed = FlightPlan.create_fpl(json_data)
-
-        plot_fpl(fpl_analyzed, ratios, threshold)
+    # register(lambda: debug_logger.info(f"n_commands {Aircraft.command_sent}, {Aircraft.total_call_time/1e9:.2f} seconds"))
+    # ip, port = retrive_ip_port()
+    # client = IFClient(ip, port)
+    
+    # fpl_analyzed, ratios, threshold = FlightPlan.add_flightPhase_to_fpl(client.send_command('full_info')) # fpl_analyzed is a deque of FIX points
+    
+    with open("good_fpl.json", "r") as json_data_file:
+        json_data = json.load(json_data_file)
+    fpl_analyzed, ratios, threshold = FlightPlan.add_flightPhase_to_fpl(json_data)
+    print(ratios, threshold, numpy.average(ratios), numpy.std(ratios))
+    plot_fpl(fpl_analyzed, ratios, threshold)
