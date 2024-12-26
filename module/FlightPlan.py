@@ -1,4 +1,4 @@
-from numpy import arccos, arctan2, cos, degrees, radians, sin, cross, array, pi
+from numpy import arccos, arctan2, cos, degrees, radians, sin, cross, array, pi, std, average, mean
 from dataclasses import dataclass, field
 from itertools import pairwise, islice
 from collections.abc import Generator
@@ -7,7 +7,7 @@ from collections import deque
 from json import loads, dump
 from .convertion import m2ft
 from re import findall
-
+from sklearn.cluster import KMeans # for fitting the ratio threshold
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -230,7 +230,7 @@ def dist_to_fix(fix: Fix, fpl: IFFPL, aircraft: "Aircraft") -> float:
 def add_flightPhase_to_fpl(json_data):
     fix_points = list(IFFPL(json_data)) # IFFPL(json_data) is a dequeue
     #fix_points.pop(0) # rimosso per evitare spike primo valore
-    
+    #fix_points.pop() # removing last point - goaround -
     #fix_points_clean.append(fix_points_clean[-1]) # adding last point to permit the calculation of the last ratio value (0 by definition) by calculating the difference with himself
     ratios = []
 
@@ -254,7 +254,7 @@ def add_flightPhase_to_fpl(json_data):
                     break
             if j >= len(fix_points):
                 break
-            distance_j_i = max(dist_fix_fix(fix_points[j], fix_points[i], fix_points), 1) # max to avoid 0/0 when comparing last fix point with himself (same distance)
+            distance_j_i = max(dist_fix_fix(fix_points[i], fix_points[j], fix_points), 1) # max to avoid 0/0 when comparing last fix point with himself (same distance)
             delta_altitude = abs(fix_points[j].get_altitude() - fix_points[i].get_altitude())
             ratios.append(delta_altitude / distance_j_i)
             i = j
@@ -269,8 +269,12 @@ def add_flightPhase_to_fpl(json_data):
 
     # lower than this thresold we assume a cruise phase otherwise it is climb or descent phase 
     # TODO find a deterministic way to choose the threshold value
-    threshold = sum(ratios) / (len(ratios) * 3) # 1/3 of the avg ratio, manually choosen value
-
+    threshold = average(ratios)/3 # 1/3 of the avg ratio, manually choosen value
+    
+    #k = 3
+    #threshold = average(ratios) - 1/k * std(ratios)
+   
+   
     # STEP 2: modifying the fly_phase attribute of every FIX POINT according to the corresponding ratio
     # TODO implement into the previous iteration through fix_points[]
     skipped_points = 0
