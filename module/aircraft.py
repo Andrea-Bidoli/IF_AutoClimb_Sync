@@ -87,7 +87,7 @@ class Aircraft(IFClient):
 
     @property
     def accel(self) -> float:
-        x = self.send_command("acceleration", "x")
+        x = self.send_command(" ", "x")
         y = self.send_command("acceleration", "y")
         z = self.send_command("acceleration", "z")
         return norm(array([x, y, z]))
@@ -138,7 +138,15 @@ class Aircraft(IFClient):
     @property
     def Landing_gear_toggle(self) -> bool:
         self.send_command("LandingGear", write=True)
-        
+
+    @property
+    def Landing_Lights_toggle(self) -> bool:
+        self.send_command("LandingLights", write=True)
+
+    @property
+    def landing_lights_status(self) -> None:
+        return self.send_command("landing_lights_switch/state")
+    
     @property
     def landing_gear_status(self) -> None:
         return self.send_command("landing_gear/animation_state")

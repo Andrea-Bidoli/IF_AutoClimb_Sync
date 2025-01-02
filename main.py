@@ -8,11 +8,19 @@ from atexit import register
 
 ip, port = retrive_ip_port()
 
+debug = True
+
+
+if debug:
+    debug_logger.Toggle_Stream()
+
 
 def main_loop() -> None:
     aircraft: Aircraft = Aircraft(ip, port)
-    fpl = IFFPL(aircraft.send_command("full_info"))
+    fpl = IFFPL(aircraft.send_command("full_info"), write=True)
     autopilot: Autopilot = Autopilot(ip, port)
+    debug_logger.debug("Aircraft and Autopilot initialized")
+    debug_logger.debug(f"Altitude: {aircraft.msl}, Ground Speed: {aircraft.gs}")
     try:
         takeoff(aircraft, autopilot)
     except ValueError:
@@ -30,5 +38,5 @@ if __name__ == "__main__":
         main_loop()
     except KeyboardInterrupt:
         ...
-    except Exception:
-        debug_logger.error("", exc_info=True)
+    # except Exception:
+    #     debug_logger.error("", exc_info=True)

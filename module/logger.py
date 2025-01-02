@@ -1,8 +1,8 @@
-import logging
 from colorama import Fore, Back, Style, init
+from pathlib import Path
+import logging
 
 init(autoreset=True)
-
 
 class ColorFormatter(logging.Formatter):
     COLORS = {
@@ -20,28 +20,43 @@ class ColorFormatter(logging.Formatter):
 
 
 class Logger(logging.Logger):
-    def __init__(self, name: str, level: int = logging.DEBUG):
+    def __init__(self, name: str, level: int = logging.INFO):
         super().__init__(name, level)
         self.propagate = False
-        stream = logging.StreamHandler()
-        file = logging.FileHandler(f"logs/{name}.log")
-        self.file_reset()
+        self._stream = True
+        self.stream_handler = logging.StreamHandler()
         stream_formatter = ColorFormatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
+        self.stream_handler.setFormatter(stream_formatter)
+        
+        if level != logging.DEBUG:
+            self.addHandler(self.stream_handler)
+        
+        log_dir = Path("./logs")
+        if not log_dir.is_dir():
+            log_dir.mkdir()
+        file = logging.FileHandler(f"logs/{name}.log")
+        self.file_reset()
         file_formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
-        stream.setFormatter(stream_formatter)
         file.setFormatter(file_formatter)
-        self.addHandler(stream)
         self.addHandler(file)
 
     def file_reset(self):
         open(f"logs/{self.name}.log", "w").close()
 
+    def Toggle_Stream(self):
+        if self._stream:
+            self.removeHandler(self.stream_handler)
+            self.stream = False
+        else:
+            self
+            self.addHandler(self.stream_handler)
+            self.stream = True
 
 # Create logger
 debug_logger = Logger("Debugger", logging.DEBUG)

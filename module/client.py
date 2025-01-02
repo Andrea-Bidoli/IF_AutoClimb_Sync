@@ -4,7 +4,12 @@ from re import Match, compile, escape, MULTILINE
 from struct import pack, unpack
 from typing import Generator
 from . import time_method
-from .logger import logger
+from .logger import logger, debug_logger
+
+from json import loads
+import asyncio as aio
+import asyncudp
+
 
 class IFClient:
     command_sent = 0
@@ -27,7 +32,7 @@ class IFClient:
         3: lambda cmd, wrt, data: pack("<i?d", cmd, wrt, data),
         4: lambda cmd, wrt, data: pack(f"<i?i{len(data)}s", cmd, wrt, len(data), data),
         5: lambda cmd, wrt, data: pack("<i?q", cmd, wrt, data),
-        -1: lambda cmd, wrt, data: pack("<i?", cmd, True),
+        -1: lambda cmd, wrt, data: pack("<i?", cmd, False),
     }
 
     def __init__(self, ip: str, port: int) -> None:
@@ -103,51 +108,104 @@ class IFClient:
 
 def retrive_ip_port():
     logger.info("Retriving IP and port...")
-    return check_connection_from_file(), 10112
+    result = aio.run(udp_listener(), debug=True)
+    return result
 
-def check_connection(ip, port=10112) -> str | None:
-    with socket(AF_INET, SOCK_STREAM) as sock:
-        try:
-            sock.connect((ip, port))
-            return ip
-        except TimeoutError:
-            return None
-        except InterruptedError:
-            return None
+## sync way to check connection (slow)
+# def check_connection(ip, port=10112) -> str | None:
+#     with socket(AF_INET, SOCK_STREAM) as sock:
+#         try:
+#             sock.connect((ip, port))
+#             return ip
+#         except TimeoutError:
+#             return None
+#         except InterruptedError:
+#             return None
+
+# def check_connection_from_file(port=10112):
+#     with open("logs/ip.log", "a+") as f:
+#         f.seek(0)
+#         ips = f.read().split("\n")
+#         ips = filter(lambda x: bool(x), ips)
+#         f.seek(0, 2)
+
+#         with ThreadPoolExecutor(3) as executor:
+#             thread_list = [executor.submit(check_connection, ip, port) for ip in ips]
+#             for future in as_completed(thread_list):
+#                 result = future.result()
+#                 if result:
+#                     return result
+
+#         with socket(AF_INET, SOCK_DGRAM) as sock:
+#             sock.bind(("",15000))
+#             sock.settimeout(6)
+#             data, _ = sock.recvfrom(1024)
+#             ip = compile(r"192\.\d{1,3}\.\d{1,3}\.\d{1,3}").search(data.decode("utf-8")).group()
+#             f.write(ip + "\n")
+#             return ip
+#         return None
 
 
-# async def udp_listener(ip: str='', port: int=15000) -> tuple[str, int]:
-#     received = False
-#     sock = await asyncudp.create_socket(local_addr=(ip, port))
-#     while not received:
-#         data, _ = await sock.recvfrom()
-#         received = True
-#         if data:
-#             data = loads(data.decode('utf-8'))
-#             return next(filter(lambda x: x.startswith("192."), data['addresses']), None), data['port']
-#         else:
-#             return '', -1
+
+async def udp_listener(ip: str='0.0.0.0', port: int=15000) -> tuple[str, int]:
+    received = False
+    sock = await asyncudp.create_socket(local_addr=(ip, port))
+    try:
+        while not received:
+            data, _ = await sock.recvfrom()
+            received = True
+            if data:
+                data = loads(data.decode('utf-8'))
+                return next(filter(lambda x: x.startswith("192."), data['addresses']), None), data['port']
+            else:
+                return '', -1
+    finally:
+        sock.close()
 
 
-def check_connection_from_file(port=10112):
+
+async def check_connection_from_file(port=10112):
     with open("logs/ip.log", "a+") as f:
         f.seek(0)
-        ips = f.read().split("\n")
+        ips = f.read().strip().split("\n")
         ips = filter(lambda x: bool(x), ips)
         f.seek(0, 2)
+        tasks = [aio.create_task(check_connection(ip, port)) for ip in ips]
+        
+        for completed in aio.as_completed(tasks):
+            result = await completed
+            if result:
+                for task in tasks:
+                    task.cancel()
+                return result
 
-        with ThreadPoolExecutor(3) as executor:
-            thread_list = [executor.submit(check_connection, ip, port) for ip in ips]
-            for future in as_completed(thread_list):
-                result = future.result()
-                if result:
-                    return result
+        results = [task.result() for task in tasks]
+        if all(map(lambda x: x is None, results)):
+            debug_logger.warning("No IPs found, listening for UDP broadcast...")
+            ip, port = await udp_listener()
+            f.write("\n" + ip)
+            return ip, port
+        else:
+            results = tuple(filter(lambda x: x is not None, results))
+            if len(results) > 1:
+                debug_logger.warning(f"Multiple IPs found:\n{results}")
+            ip = results[0]
+            
+        return ip, port
 
-        with socket(AF_INET, SOCK_DGRAM) as sock:
-            sock.bind(("",15000))
-            sock.settimeout(6)
-            data, _ = sock.recvfrom(1024)
-            ip = compile(r"192\.\d{1,3}\.\d{1,3}\.\d{1,3}").search(data.decode("utf-8")).group()
-            f.write(ip + "\n")
-            return ip
+
+async def check_connection(ip, port) -> str | None:
+    try:
+        debug_logger.info(f"Checking connection to {ip}:{port}")
+        _, writer = await aio.open_connection(ip, port, ssl_handshake_timeout=30)
+        debug_logger.info(f"{ip}_writer: {writer}")
+        return ip
+    except aio.TimeoutError:
         return None
+    finally:
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception as e:
+            debug_logger.error(f"{ip} :: {e}")
+            return None

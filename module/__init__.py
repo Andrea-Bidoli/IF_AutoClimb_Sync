@@ -101,4 +101,7 @@ def in_range(value: float, target: float, tollerance: float = 1) -> bool:
     Returns:
         bool: True if value is in range
     """
-    return isclose(value, target, rel_tol=tollerance)
+    
+    is_close = isclose(value, target, abs_tol=tollerance)
+    
+    return is_close
