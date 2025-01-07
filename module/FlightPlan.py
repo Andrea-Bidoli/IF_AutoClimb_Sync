@@ -173,24 +173,29 @@ class IFFPL(list[Fix]):
 
         for fix_1, fix_2 in pairwise(self):
             fix_2.dist_to_prev = cosine_law(fix_1, fix_2)
-            
-    def find_climb_wps(self) -> Generator[Fix, None, None]:
-        for fix in self:
-            if fix.flight_phase == 0 and fix.alt > 0:
-                yield fix
-    
-    def find_stepclimb_wps(self) -> Generator[Fix, None, None]:
-        for fix in self:
-            if fix.flight_phase == 1 and fix.alt > 0:
-                yield fix
-    
-    def find_descent_wps(self) -> Generator[Fix, None, None]:
-        for fix in self:
-            if fix.flight_phase == 2 and fix.alt > 0:
-                yield fix
 
-    def update(self, client: 'Aircraft') -> None:
+
+    def vnav_wps(self, start: int = 0) -> Generator[Fix, None, None]:
+        yield from filter(lambda x: x.alt > 0, self[start:])
+
+    # def find_climb_wps(self) -> Generator[Fix, None, None]:
+    #     for fix in self:
+    #         if fix.flight_phase == 0 and fix.alt > 0:
+    #             yield fix
+    
+    # def find_stepclimb_wps(self) -> Generator[Fix, None, None]:
+    #     for fix in self:
+    #         if fix.flight_phase == 1 and fix.alt > 0:
+    #             yield fix
+    
+    # def find_descent_wps(self) -> Generator[Fix, None, None]:
+    #     for fix in self:
+    #         if fix.flight_phase == 2 and fix.alt > 0:
+    #             yield fix
+
+    def update_vnav_wps(self, client: 'Aircraft') -> Generator[Fix, None, None]:
         self.__init__(client.send_command("full_info"))
+        return self.vnav_wps()
 
 
 def angle_between_3_fix(fix1: Fix, fix2: Fix, fix3: Fix):
