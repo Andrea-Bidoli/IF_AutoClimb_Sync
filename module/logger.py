@@ -18,22 +18,26 @@ class ColorFormatter(logging.Formatter):
         message = super().format(record)
         return f"{log_color}{message}{Style.RESET_ALL}"
 
+class Filter(logging.Filter):
+    def __init__(self, name = "", debug = False):
+        super().__init__(name)
+        self.debug = debug
+    def filter(self, record):
+        return record.levelno in (logging.DEBUG, logging.INFO) if self.debug else True
 
 class Logger(logging.Logger):
     def __init__(self, name: str, level: int = logging.INFO):
         super().__init__(name, level)
         self.propagate = False
-        self._stream = True
         self.stream_handler = logging.StreamHandler()
         stream_formatter = ColorFormatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            "{asctime} - {name} - {funcName!r}: {message}",
             datefmt="%Y-%m-%d %H:%M:%S",
+            style="{"
         )
         self.stream_handler.setFormatter(stream_formatter)
-        
-        if level != logging.DEBUG:
-            self.addHandler(self.stream_handler)
-        
+        self.addHandler(self.stream_handler)
+
         log_dir = Path("./logs")
         if not log_dir.is_dir():
             log_dir.mkdir()
@@ -49,15 +53,7 @@ class Logger(logging.Logger):
     def file_reset(self):
         open(f"logs/{self.name}.log", "w").close()
 
-    def Toggle_Stream(self):
-        if self._stream:
-            self.removeHandler(self.stream_handler)
-            self.stream = False
-        else:
-            self
-            self.addHandler(self.stream_handler)
-            self.stream = True
 
 # Create logger
-debug_logger = Logger("Debugger", logging.DEBUG)
+debug_logger = Logger("Debugger", logging.INFO)
 logger = Logger("Autopilot", logging.INFO)

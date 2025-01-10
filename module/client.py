@@ -1,20 +1,37 @@
 from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM
+from functools import wraps
+from socket import error as socket_error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from re import Match, compile, escape, MULTILINE
 from struct import pack, unpack
-from typing import Generator
-from . import time_method
+from typing import Generator, Callable
+from .func import time_method
 from .logger import logger, debug_logger
 
 from json import loads
 import asyncio as aio
 import asyncudp
 
+def reconnect(func: Callable):
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return func(self, *args, **kwargs)
+        except (socket_error, ConnectionError) as e:
+            if self.tries >= 10:
+                debug_logger.error(f"Connection failed after {self.tries} tries, exiting...")
+                raise e
+            debug_logger.error(f"{e}")
+            self.__init__(self.ip, self.port)
+            self.tries += 1
+            return func(self, *args, **kwargs)
+    return wrapper
 
 class IFClient:
     command_sent = 0
     manifest = None
     total_call_time = 0
+    tries = 0
 
     read_converter = {
         0: lambda x, _: unpack("<?", x)[0],
@@ -44,6 +61,7 @@ class IFClient:
         with open("logs/manifest.txt", "w") as f:
             f.write(self.manifest)
 
+    @reconnect
     @time_method
     def send_command(self, *args, write: bool = False, data: int = 0):
         def recv_exact(lenght: int) -> bytes:

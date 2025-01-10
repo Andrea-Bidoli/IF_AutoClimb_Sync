@@ -164,4 +164,5 @@ cython_debug/
 .vscode/*
 logs/*
 test/*
+info_server/*
 todo_list.md

@@ -1,7 +1,6 @@
 from .database import Airplane, retrive_airplane
-from numpy import radians, array, arcsin
+from numpy import radians, arcsin
 from .logger import debug_logger
-from numpy.linalg import norm
 from .client import IFClient
 from .FlightPlan import Fix
 
@@ -70,10 +69,6 @@ class Aircraft(IFClient):
         return self.send_command("pitch")
 
     @property
-    def next_name(self) -> str:
-        return self.send_command("flightplan", "next_waypoint_name")
-
-    @property
     def next_index(self) -> int:
         return self.send_command("flightplan", "next_waypoint_index")
 
@@ -82,15 +77,8 @@ class Aircraft(IFClient):
         return self.send_command("flightplan", "next_waypoint_dist") * 1852
 
     @property
-    def dist_to_dest(self) -> float:
-        return self.send_command("flightplan", "destination_dist") * 1852
-
-    @property
     def accel(self) -> float:
-        x = self.send_command(" ", "x")
-        y = self.send_command("acceleration", "y")
-        z = self.send_command("acceleration", "z")
-        return norm(array([x, y, z]))
+        return self.send_command("acceleration", "z")
 
     @property
     def spd_change(self) -> float:
@@ -113,7 +101,7 @@ class Aircraft(IFClient):
         name = self.send_command("aircraft/0/name")
         lat = self.send_command("0/latitude")
         lon = self.send_command("0/longitude")
-        return Fix(name, self.msl, lat, lon, -1)
+        return Fix(name, self.msl, lat, lon, self.next_index-1)
 
     @property
     def elevator(self) -> int:
@@ -157,11 +145,6 @@ class Aircraft(IFClient):
 
     @property
     def γ(self) -> float:
-        """positive angle (wind left to right)
-
-        Returns:
-            float: slipstream angle
-        """
         crosswind = self.send_command("crosswind_component")
         return arcsin(crosswind / self.tas)
 

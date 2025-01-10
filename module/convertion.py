@@ -1,5 +1,6 @@
 from numpy import sqrt, sign
-from . import in_range
+from .func import in_range
+from .logger import debug_logger
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -76,29 +77,6 @@ def ms2fpm(ms: float) -> float:
 
 def fpm2ms(fpm: float) -> float:
     return fpm / 196.85
-
-
-def calc_delta_throttle(current: float, target: float, aircraft: 'Aircraft') -> float:
-    """Calculate the delta throttle to maintain the acc target
-
-    Args:
-        current (float): current value
-        target (float): target value
-        aircraft (Aircraft): aircraft object
-
-    Returns:
-        float: delta throttle to add
-    """
-    if in_range(current, target, 0.2):
-        delta = 0
-    else:
-        delta = round(target - current, 2)
-    if aircraft.n1_target >= 0.9 or delta == 0:
-        return 0
-    elif abs(delta) > 0.1 and aircraft.n1_target <= 0.8:
-        return sign(delta) * 0.1
-    else:
-        return sign(delta) * 0.01
 
 
 def decimal_to_dms(decimal: float) -> str:

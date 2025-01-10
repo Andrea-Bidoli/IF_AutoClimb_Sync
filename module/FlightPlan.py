@@ -1,17 +1,26 @@
 from numpy import arccos, arctan2, cos, degrees, radians, sin, cross, array, pi
 from .convertion import m2ft, ft2m, decimal_to_dms
+from .logger import logger
 from dataclasses import dataclass, field
-from itertools import pairwise, islice
+from itertools import pairwise
 from collections.abc import Generator
 from json import loads, load, dump
-from collections import deque
 from numpy.linalg import norm
 from io import TextIOWrapper
 from re import findall
 
+from enum import Enum, auto
+
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .aircraft import Aircraft
+
+class FlightPhase(Enum):
+    CLIMB = auto()
+    CRUISE = auto()
+    DESCENT = auto()
+    NULL = auto()
+
 
 
 @dataclass(slots=True)
@@ -21,8 +30,8 @@ class Fix:
     lat: float
     lon: float
     _index: int
-    dist_to_prev: float = field(init=False, default=0)
-    _flight_phase: int = field(init=False, default=-1)
+    dist_to_next: float = field(init=False, default=0)
+    _flight_phase: int = field(init=False, default=FlightPhase.NULL)
 
     def __post_init__(self):
         self.lat = radians(self.lat)
@@ -31,7 +40,7 @@ class Fix:
     def __str__(self):
         return  f"name={self.name} alt={m2ft(self.alt)}\n"+\
                 f"lat={decimal_to_dms(degrees(self.lat))} lon={decimal_to_dms(degrees(self.lon))}\n"+\
-                f"index={self._index} dist={self.dist_to_prev}\n"+\
+                f"index={self._index} dist={self.dist_to_next}\n"+\
                 f"flight phase={self.flight_phase}"
 
     def __format__(self, format_spec: str) -> str:
@@ -75,7 +84,7 @@ class IFFPL(list[Fix]):
             except TypeError:
                 detailFPL = False
         if not detailFPL:
-            print("No flight plan defined")
+            logger.warning("No flight plan defined")
             return None
 
         instance = super().__new__(cls)
@@ -111,36 +120,44 @@ class IFFPL(list[Fix]):
         else:
             self.json_data = loads(json_data) if isinstance(json_data, (str, bytes, bytearray)) else json_data
         self._index = 0
+        
         def filter_func(x):
             if x["name"] is None:
                 return False
             return x["name"].lower() != "toc"
+        
         if next(filter(filter_func, 
                        self.json_data["detailedInfo"]["flightPlanItems"]), None) is None:
             self.good_fpl = False
+        
         if write:
             with open("logs/fpl.json", "w") as f:
                 dump(self.json_data, f, indent=4)
+        
         for key in self.json_data["detailedInfo"]:
             if key == "flightPlanItems":
                 self.set_list(self.json_data["detailedInfo"]["flightPlanItems"])
+        
         self.__post_init__()
     
     def __post_init__(self):
         if self.good_fpl:
             for fix in self:
                 if self.TOC_finded and self.TOD_finded:
-                    fix._flight_phase = 2
+                    fix._flight_phase = FlightPhase.DESCENT
+
                 elif self.TOC_finded and not self.TOD_finded:
                     if fix.name.lower() == "tod":
                         self.TOD_finded = True
-                        fix._flight_phase = 2
+                        fix._flight_phase = FlightPhase.DESCENT
                         continue
-                    fix._flight_phase = 1
+                    fix._flight_phase = FlightPhase.CRUISE
+
                 elif not self.TOC_finded and not self.TOD_finded:
-                    fix._flight_phase = 0
+                    fix._flight_phase = FlightPhase.CLIMB
                     if fix.name.lower() == "toc":
                         self.TOC_finded = True
+
         else:
             copy = [fix for fix in self if fix.alt > 0]
             copy = sorted(copy, key=lambda x: x.alt, reverse=True)
@@ -150,6 +167,7 @@ class IFFPL(list[Fix]):
                 if abs(fix1.alt - fix2.alt) <= ft2m(2000):
                     tmp.add(fix1)
                     tmp.add(fix2)
+
                 else: break
 
             tmp_list = list(tmp)
@@ -157,45 +175,31 @@ class IFFPL(list[Fix]):
             if len(tmp_list) == 1:
                 cruise_start = tmp_list[0].index + 1
                 cruise_finish = max(self[cruise_start:], key=lambda x: x.alt).index
+
             else:
                 tmp_list.sort(key=lambda x: x.index)
                 cruise_start = tmp_list[0].index
                 cruise_finish = max(self[tmp_list[-1].index:], key=lambda x: x.alt).index
-            
-            
+
+
             for fix in self:
                 if fix.index < cruise_start:
-                    fix._flight_phase = 0
+                    fix._flight_phase = FlightPhase.CLIMB
                 elif cruise_start <= fix.index < cruise_finish:
-                    fix._flight_phase = 1
+                    fix._flight_phase = FlightPhase.CRUISE
                 else:
-                    fix._flight_phase = 2 
+                    fix._flight_phase = FlightPhase.DESCENT
 
         for fix_1, fix_2 in pairwise(self):
-            fix_2.dist_to_prev = cosine_law(fix_1, fix_2)
+            fix_1.dist_to_next = cosine_law(fix_1, fix_2)
 
 
     def vnav_wps(self, start: int = 0) -> Generator[Fix, None, None]:
         yield from filter(lambda x: x.alt > 0, self[start:])
 
-    # def find_climb_wps(self) -> Generator[Fix, None, None]:
-    #     for fix in self:
-    #         if fix.flight_phase == 0 and fix.alt > 0:
-    #             yield fix
-    
-    # def find_stepclimb_wps(self) -> Generator[Fix, None, None]:
-    #     for fix in self:
-    #         if fix.flight_phase == 1 and fix.alt > 0:
-    #             yield fix
-    
-    # def find_descent_wps(self) -> Generator[Fix, None, None]:
-    #     for fix in self:
-    #         if fix.flight_phase == 2 and fix.alt > 0:
-    #             yield fix
-
     def update_vnav_wps(self, client: 'Aircraft') -> Generator[Fix, None, None]:
         self.__init__(client.send_command("full_info"))
-        return self.vnav_wps()
+        return self.vnav_wps(client.next_index)
 
 
 def angle_between_3_fix(fix1: Fix, fix2: Fix, fix3: Fix):
@@ -250,14 +254,16 @@ def cosine_law(fix1: Fix, fix2: Fix) -> float:
         * R
     )
 
-
-def dist_fix_fix(start_fix: Fix, end_fix: Fix, waypoint_route: IFFPL[Fix]) -> float:
-    total_distance = 0.0
-    start, finish = waypoint_route.index(start_fix), waypoint_route.index(end_fix) + 1
-    for fix in waypoint_route[start:finish]:
-        total_distance += fix.dist_to_prev
-    return total_distance
-
+def dist_fix_fix(fix1: Fix, fix2: Fix, fpl: IFFPL) -> float:
+    if fix1.index > fix2.index:
+        fix1, fix2 = fix2, fix1
+    
+    start = fix1.index
+    end = fix2.index
+    
+    l = map(lambda x: x.dist_to_next, fpl[start:end])
+    
+    return sum(l)
 
 def dist_to_fix(fix: Fix, fpl: IFFPL, aircraft: 'Aircraft') -> float:
     if fix.index == aircraft.next_index:

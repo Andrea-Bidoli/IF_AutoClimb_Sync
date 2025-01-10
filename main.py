@@ -1,18 +1,9 @@
-from flight_phases import climbing, cruise, takeoff
-from module.aircraft import Aircraft, Autopilot
-from module.logger import logger, debug_logger
-from module.client import retrive_ip_port
-from module.FlightPlan import IFFPL
+from flight_phases import vnav, takeoff
+from module import Aircraft, Autopilot, logger, debug_logger, retrive_ip_port, IFFPL
 from atexit import register
 
 
 ip, port = retrive_ip_port()
-
-debug = True
-
-
-if debug:
-    debug_logger.Toggle_Stream()
 
 
 def main_loop() -> None:
@@ -20,15 +11,8 @@ def main_loop() -> None:
     fpl = IFFPL(aircraft.send_command("full_info"), write=True)
     autopilot: Autopilot = Autopilot(ip, port)
     debug_logger.debug("Aircraft and Autopilot initialized")
-    debug_logger.debug(f"Altitude: {aircraft.msl}, Ground Speed: {aircraft.gs}")
-    try:
-        takeoff(aircraft, autopilot)
-    except ValueError:
-        logger.warning("Aircraft don't support FLEX TEMP, please take off manually")
-    logger.info("Starting climb")
-    climbing(aircraft, autopilot, fpl)
-    logger.info("Starting cruise")
-    cruise(aircraft, autopilot, fpl)
+    takeoff(aircraft, autopilot)
+    vnav(aircraft, autopilot, fpl)
     logger.info("Autopilot finished")
 
 
