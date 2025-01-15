@@ -1,11 +1,11 @@
-from module import m2ft, fpm2ms, knot2ms, ft2m
+from module import ms2fpm, fpm2ms, knot2ms, ft2m, m2ft
 from module import IFFPL, Fix, dist_to_fix, FlightPhase
 from module import Aircraft, Autopilot
 from module import logger, debug_logger
 from module import in_range, format_time
 from module import Airplane
 
-from numpy import arctan2, sin, sign
+from numpy import arctan2, sin, sign, radians, degrees
 # from datetime import datetime, timedelta
 from time import sleep
 
@@ -18,14 +18,17 @@ class Autothrottle:
         self.airplane: Airplane = aircraft.airplane
         self.aircraft: Aircraft = aircraft
         self.autopilot: Autopilot = autopilot
-        self.target_spd: float = knot2ms(self.airplane.climb_v1)
+        if self.airplane is None:
+            self.target_spd: float = knot2ms(250)
+        else:
+            self.target_spd: float = knot2ms(self.airplane.climb_v1)
         self.current_spd: float = None
         self.current_acc: float = None
-        self.target_acc: float = -8e3 # ~ 1 knot/s
+        self.target_acc: float = 0.8 # ~ 1 knot/s
 
     def _change_spd(self) -> None:
         self.current_spd = self.aircraft.mach if self.autopilot.SpdMode else self.aircraft.ias
-        self.current_acc = self.aircraft.accel
+        self.current_acc = self.aircraft.accel * -1e2
 
         if (not in_range(self.autopilot.Spd, self.target_spd, 1e-4)):
             self.autopilot.SpdOn = False
@@ -41,23 +44,30 @@ class Autothrottle:
 
         else:
             self.autopilot.SpdOn = True
-    
+
+
     def __call__(self) -> None:
-        if (self.autopilot.SpdMode and not in_range(self.autopilot.Spd, self.airplane.climb_v3, 1e-4)):
-            self.target_spd = self.airplane.climb_v3
-        elif (self.aircraft.msl >= ft2m(10_000) and not self.above_10k):
-            self.aircraft.Landing_Lights_toggle
-            self.target_spd = knot2ms(self.airplane.climb_v2)
-            self.above_10k = True
+        if self.airplane is not None:    
+            if (self.autopilot.SpdMode and not in_range(self.autopilot.Spd, self.airplane.climb_v3, 1e-4)):
+                self.target_spd = self.airplane.climb_v3
+            elif (self.aircraft.msl >= ft2m(10_000) and not self.above_10k):
+                self.aircraft.Landing_Lights_toggle
+                self.target_spd = knot2ms(self.airplane.climb_v2)
+                self.above_10k = True
+        else:
+            if self.target_spd != self.autopilot.Spd:
+                self.target_spd = self.autopilot.Spd
         self._change_spd()
+
 
     def calc_delta_throttle(self) -> float:
         
-        if in_range(self.current_acc, self.target_acc, 0.4):
+        if in_range(self.current_acc, self.target_acc, tollerance=0.05):
             delta_acc = 0
         
         else:
             delta_acc = round(self.target_acc - self.current_acc, 2)
+            debug_logger.debug(f"Delta acc: {delta_acc}")
         
         if delta_acc == 0:
             return 0
@@ -96,7 +106,7 @@ def takeoff(aircraft: Aircraft, autopilot: Autopilot) -> None:
         sleep(1)
     autopilot.Throttle = TO_setting
     logger.info(f"Starting takeoff\nTO n1:{aircraft.n1_target:.2f}")
-    while aircraft.is_on_ground or (aircraft.vs > fpm2ms(100) and aircraft.agl <= ft2m(300)): sleep(1)
+    while aircraft.is_on_ground or (aircraft.vs > fpm2ms(100) and aircraft.agl <= ft2m(100)): sleep(1)
     aircraft.Landing_gear_toggle
 
 
@@ -104,14 +114,14 @@ def vnav(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
     if fpl is None: 
         logger.warning("No flight plan found, unable to perfom VNAV")
         return
-
+    logger.info("Starting VNAV")
     autothrottle = Autothrottle(aircraft, autopilot)
     vnav_wps = fpl.update_vnav_wps(aircraft)
     waypoint = next(vnav_wps, dummy_fix)
     
     time_target = 2 * 60
 
-    
+
     while waypoint != dummy_fix:
         # setting the next "important" waypoint for the program 
         if aircraft.next_index > waypoint.index:
@@ -137,12 +147,13 @@ def vnav(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
             
             if ete_fix <= 0:
                 # changing the altitude and vertical speed of the aircraft
-                logger.info(f"new Altitude: {m2ft(waypoint.alt):.0f} Vs: {m2ft(target_vs):.0f} ETE: {format_time(ete_fix)}")
+                logger.info(f"new Altitude: {m2ft(waypoint.alt):.0f} Vs: {ms2fpm(target_vs):.0f} ETE: {format_time(ete_fix)}")
                 autopilot.Alt = waypoint.alt
                 autopilot.Vs = target_vs
                 vnav_wps = fpl.update_vnav_wps(aircraft)
                 continue
             elif ete_fix > 6 * 60:
+                logger.info(f"Next waypoint: {waypoint.name} in {format_time(dist_to_fix(waypoint, fpl, aircraft)/aircraft.gs)}")
                 sleep(5*60)
             else:
                 sleep(10)
@@ -157,3 +168,4 @@ def climbing_test(aircraft: Aircraft, autopilot: Autopilot):
     while aircraft.msl < autopilot.Alt:
         # change_spd part
         autothrottle()
+        sleep(1)

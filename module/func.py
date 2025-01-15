@@ -90,7 +90,7 @@ def calc_throttle(throttle: float) -> int:
     return int(throttle * 2000 - 1000)
 
 
-def in_range(value: float, target: float, tollerance: float = 1) -> bool:
+def in_range(value: float, target: float, tollerance: float = 0, rel_tol = 1e-9) -> bool:
     """in range, tollerance is for 1 kts
 
     Args:
@@ -102,6 +102,6 @@ def in_range(value: float, target: float, tollerance: float = 1) -> bool:
         bool: True if value is in range
     """
     
-    is_close = isclose(value, target, abs_tol=tollerance)
+    is_close = isclose(value, target, abs_tol=tollerance, rel_tol=rel_tol)
     
     return is_close

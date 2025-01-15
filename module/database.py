@@ -225,6 +225,15 @@ def first_add_to_db():
             descent_v3=250,
             k=0.16
         ),
+        Airplane(
+            icao="BCS3",
+            climb_v1=250,
+            climb_v2=280,
+            climb_v3=0.75,
+            descent_v1=0.75,
+            descent_v2=280,
+            descent_v3=250,
+        )
     ]
     for airp in x: add_to_db(airp)
 

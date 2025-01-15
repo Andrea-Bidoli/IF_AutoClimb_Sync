@@ -208,6 +208,10 @@ class Autopilot(IFClient):
         value = self.send_command("simulator", "throttle")
         return round((1000 - value) / 2000, 2)
 
+    @property
+    def vnav(self):
+        return self.send_command("vnav/on")
+
     @Alt.setter
     def Alt(self, value: float) -> None:
         self.send_command("alt", "target", write=True, data=value)

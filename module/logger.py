@@ -54,6 +54,16 @@ class Logger(logging.Logger):
         open(f"logs/{self.name}.log", "w").close()
 
 
+
+
+
 # Create logger
 debug_logger = Logger("Debugger", logging.INFO)
 logger = Logger("Autopilot", logging.INFO)
+
+
+def init_loggers(debug=True):
+    global debug_logger, logger
+    if debug:
+        debug_logger.setLevel(logging.DEBUG)
+    

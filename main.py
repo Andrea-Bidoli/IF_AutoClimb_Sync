@@ -1,8 +1,8 @@
-from flight_phases import vnav, takeoff
-from module import Aircraft, Autopilot, logger, debug_logger, retrive_ip_port, IFFPL
+from flight_phases import vnav, takeoff, climbing_test
+from module import Aircraft, Autopilot, logger, debug_logger, retrive_ip_port, IFFPL, init_loggers
 from atexit import register
 
-
+init_loggers(debug=False)
 ip, port = retrive_ip_port()
 
 
@@ -13,14 +13,13 @@ def main_loop() -> None:
     debug_logger.debug("Aircraft and Autopilot initialized")
     takeoff(aircraft, autopilot)
     vnav(aircraft, autopilot, fpl)
+    # climbing_test(aircraft, autopilot)
     logger.info("Autopilot finished")
 
 
 if __name__ == "__main__":
-    try:
+    # try:
         register(lambda: debug_logger.info(f"n_commands {Aircraft.command_sent}, {Aircraft.total_call_time/1e9:.2f} seconds"))
         main_loop()
-    except KeyboardInterrupt:
-        ...
     # except Exception:
-    #     debug_logger.error("", exc_info=True)
+        # debug_logger.error("", exc_info=True)
