@@ -8,6 +8,8 @@ from numpy import (
     float64,
     iinfo,
     finfo,
+    log10,
+    sign,
 )
 from datetime import datetime, timedelta
 from time import perf_counter_ns
@@ -88,6 +90,16 @@ def efficient_number(num):
 def calc_throttle(throttle: float) -> int:
     throttle = max(0, min(1, throttle))
     return int(throttle * 2000 - 1000)
+
+
+def get_tollerance(num: float) -> int:
+    try:
+        magnitude = int(log10(abs(num)))
+    except ValueError: return 10**0
+    if magnitude >= 1:
+        return 10**0
+    else:
+        return 10**(magnitude - 2)
 
 
 def in_range(value: float, target: float, tollerance: float = 0, rel_tol = 1e-9) -> bool:
