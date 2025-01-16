@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from re import Match, compile, escape, MULTILINE
 from struct import pack, unpack
 from typing import Generator, Callable
-from .func import time_method
+from .utils import time_method
 from .logger import logger, debug_logger
 
 from json import loads

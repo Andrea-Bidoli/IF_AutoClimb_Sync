@@ -1,4 +1,4 @@
-from module import ms2fpm, fpm2ms, knot2ms, ft2m, m2ft
+from module import ms2fpm, fpm2ms, knot2ms, ft2m, m2ft, get_tollerance
 from module import IFFPL, Fix, dist_to_fix, FlightPhase
 from module import Aircraft, Autopilot
 from module import logger, debug_logger
@@ -62,11 +62,11 @@ class Autothrottle:
 
     def calc_delta_throttle(self) -> float:
         
-        if in_range(self.current_acc, self.target_acc, tollerance=0.05):
+        if in_range(self.current_acc, self.target_acc, tollerance=get_tollerance(self.target_acc)):
             delta_acc = 0
         
         else:
-            delta_acc = round(self.target_acc - self.current_acc, 2)
+            delta_acc = self.target_acc - self.current_acc
             debug_logger.debug(f"Delta acc: {delta_acc}")
         
         if delta_acc == 0:

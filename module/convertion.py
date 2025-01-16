@@ -1,5 +1,5 @@
 from numpy import sqrt, sign
-from .func import in_range
+from .utils import in_range
 from .logger import debug_logger
 
 from typing import TYPE_CHECKING
