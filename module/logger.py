@@ -4,6 +4,8 @@ import logging
 
 init(autoreset=True)
 
+
+
 class ColorFormatter(logging.Formatter):
     COLORS = {
         logging.DEBUG: Fore.BLUE,
@@ -22,10 +24,17 @@ class Filter(logging.Filter):
     def __init__(self, name = "", debug = False):
         super().__init__(name)
         self.debug = debug
+    def toggle_debug(self):
+        self.debug = not self.debug
     def filter(self, record):
-        return record.levelno in (logging.DEBUG, logging.INFO) if self.debug else True
-
+        if not self.debug:
+            return record.levelno != logging.DEBUG
+        else:
+            return True
+    
 class Logger(logging.Logger):
+    def toggle_debug(self):
+        self._filter.toggle_debug()
     def __init__(self, name: str, level: int = logging.INFO):
         super().__init__(name, level)
         self.propagate = False
@@ -36,6 +45,8 @@ class Logger(logging.Logger):
             style="{"
         )
         self.stream_handler.setFormatter(stream_formatter)
+        self._filter = Filter(name, False)
+        self.stream_handler.addFilter(self._filter)
         self.addHandler(self.stream_handler)
 
         log_dir = Path("./logs")
@@ -58,12 +69,6 @@ class Logger(logging.Logger):
 
 
 # Create logger
-debug_logger = Logger("Debugger", logging.INFO)
+debug_logger = Logger("Debugger", logging.DEBUG)
 logger = Logger("Autopilot", logging.INFO)
-
-
-def init_loggers(debug=True):
-    global debug_logger, logger
-    if debug:
-        debug_logger.setLevel(logging.DEBUG)
     

@@ -1,9 +1,8 @@
-from module import ms2fpm, fpm2ms, knot2ms, ft2m, m2ft, get_tollerance
+from module import ms2fpm, fpm2ms, ft2m, m2ft
 from module import IFFPL, Fix, dist_to_fix, FlightPhase
-from module import Aircraft, Autopilot
-from module import logger, debug_logger
-from module import in_range, format_time
-from module import Airplane
+from module import Aircraft, Autopilot, Autothrottle
+from module import format_time
+from module import logger
 
 from numpy import arctan2, sin, sign, radians, degrees
 # from datetime import datetime, timedelta
@@ -12,96 +11,33 @@ from time import sleep
 dummy_fix = Fix("None", -1, -1, -1, -1)
 
 
-class Autothrottle:
-    def __init__(self, aircraft: Aircraft, autopilot: Autopilot) -> None:
-        self.above_10k: bool = False
-        self.airplane: Airplane = aircraft.airplane
-        self.aircraft: Aircraft = aircraft
-        self.autopilot: Autopilot = autopilot
-        if self.airplane is None:
-            self.target_spd: float = knot2ms(250)
-        else:
-            self.target_spd: float = knot2ms(self.airplane.climb_v1)
-        self.current_spd: float = None
-        self.current_acc: float = None
-        self.target_acc: float = 0.8 # ~ 1 knot/s
-
-    def _change_spd(self) -> None:
-        self.current_spd = self.aircraft.mach if self.autopilot.SpdMode else self.aircraft.ias
-        self.current_acc = self.aircraft.accel * -1e2
-
-        if (not in_range(self.autopilot.Spd, self.target_spd, 1e-4)):
-            self.autopilot.SpdOn = False
-            self.autopilot.Spd = self.target_spd
-
-        tol = 0.01 if self.autopilot.SpdMode else knot2ms(3)
-
-        if not in_range(self.current_spd, self.target_spd, tol):
-            delta_throttle = self.calc_delta_throttle()
-            debug_logger.debug(f"Delta throttle: {delta_throttle}")
-            if delta_throttle != 0:
-                self.autopilot.Throttle += delta_throttle
-
-        else:
-            self.autopilot.SpdOn = True
-
-
-    def __call__(self) -> None:
-        if self.airplane is not None:    
-            if (self.autopilot.SpdMode and not in_range(self.autopilot.Spd, self.airplane.climb_v3, 1e-4)):
-                self.target_spd = self.airplane.climb_v3
-            elif (self.aircraft.msl >= ft2m(10_000) and not self.above_10k):
-                self.aircraft.Landing_Lights_toggle
-                self.target_spd = knot2ms(self.airplane.climb_v2)
-                self.above_10k = True
-        else:
-            if self.target_spd != self.autopilot.Spd:
-                self.target_spd = self.autopilot.Spd
-        self._change_spd()
-
-
-    def calc_delta_throttle(self) -> float:
-        
-        if in_range(self.current_acc, self.target_acc, tollerance=get_tollerance(self.target_acc)):
-            delta_acc = 0
-        
-        else:
-            delta_acc = self.target_acc - self.current_acc
-            debug_logger.debug(f"Delta acc: {delta_acc}")
-        
-        if delta_acc == 0:
-            return 0
-        
-        elif abs(delta_acc) > 0.1:
-            # debug_logger.debug(f"Delta: {delta_acc}\ndelta_throttle: {sign(delta_acc) * 0.05}")
-            return sign(delta_acc) * 0.05
-        
-        else:
-            # debug_logger.debug(f"Delta: {delta_acc}\n{sign(delta_acc) * 0.01}")
-            return sign(delta_acc) * 0.01
-
-
 def takeoff(aircraft: Aircraft, autopilot: Autopilot) -> None:
     logger.info("Starting takeoff")
     if not aircraft.is_on_ground:
         return
     k = None
     TO_setting: float = 0
-    flex_temp: int = input("FLEX temperature : ") or 1
-    DTO = int(flex_temp)
+    flex_temp: str = input("FLEX temperature : ") or ""
+    match flex_temp.split('-'):
+        case (dto, temp):
+            dto = int(dto)
+            temp = int(temp)
+        case (temp,):
+            dto = 0
+            temp = int(temp)
     try:
         k = aircraft.airplane.k
-        if DTO >= aircraft.OAT:
-            TO_setting = (100 - k * (DTO - aircraft.OAT)) / 100
+        if temp >= aircraft.OAT:
+            TO_setting = ((100-dto*10) - k * (temp - aircraft.OAT)) / 100
     except AttributeError: ...
 
-    if DTO > 2 and TO_setting == 0:
+    if temp > 2 and TO_setting == 0:
         logger.warning("Aircraft don't support FLEX TEMP, please take off manually")
         return
-    elif DTO <= 2 and TO_setting == 0:
-        TO_setting = (100 - DTO * 10) / 100
+    elif temp <= 2 and TO_setting == 0:
+        TO_setting = (100 - temp * 10) / 100
 
-    logger.info(f"Flex temp: {DTO} TO setting: {TO_setting}")
+    logger.info(f"Flex temp: {dto}-{temp} TO setting: {TO_setting: .2f}")
     while aircraft.n1 < 0.5 or (not aircraft.is_on_runway and aircraft.is_on_ground):
         sleep(1)
     autopilot.Throttle = TO_setting
@@ -118,7 +54,7 @@ def vnav(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
     autothrottle = Autothrottle(aircraft, autopilot)
     vnav_wps = fpl.update_vnav_wps(aircraft)
     waypoint = next(vnav_wps, dummy_fix)
-    
+    desced_angle = radians(2)    
     time_target = 2 * 60
 
 
@@ -132,7 +68,7 @@ def vnav(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
         if waypoint.flight_phase == FlightPhase.CLIMB:
             if autopilot.Alt != waypoint.alt:
                 autopilot.Alt = waypoint.alt
-            autothrottle()
+            autothrottle(waypoint)
             delta_alt = waypoint.alt - aircraft.msl
             dist = dist_to_fix(waypoint, fpl, aircraft)
             angle = arctan2(delta_alt, dist)
@@ -160,6 +96,14 @@ def vnav(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
         
         elif waypoint.flight_phase == FlightPhase.DESCENT:
             break
+            delta_alt = waypoint.alt - autopilot.Alt
+            dist = dist_to_fix(waypoint, fpl, aircraft)
+            angle = arctan2(delta_alt, dist)
+            target_vs = aircraft.gs * sin(angle)
+            if angle > desced_angle:
+                if autopilot.Alt != waypoint.alt:
+                    autopilot.Alt = waypoint.alt
+                autopilot.Vs = target_vs
 
 def climbing_test(aircraft: Aircraft, autopilot: Autopilot):
     while aircraft.is_on_ground:

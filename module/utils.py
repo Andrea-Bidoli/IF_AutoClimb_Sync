@@ -14,7 +14,6 @@ from numpy import (
 from datetime import datetime, timedelta
 from time import perf_counter_ns
 from functools import wraps
-from math import isclose
 
 # def track_all_methods_call_time(cls:object):
 #     """create a decorator that will track the total time spent in each method of a class
@@ -96,27 +95,10 @@ def get_tollerance(num: float) -> int:
     try:
         magnitude = int(log10(abs(num)))
     except ValueError: return 10**0
-    if magnitude >= 1:
+    if magnitude > 0:
         return 10**0
     else:
-        return 10**(magnitude - 2)
-
-
-def in_range(value: float, target: float, tollerance: float = 0, rel_tol = 1e-9) -> bool:
-    """in range, tollerance is for 1 kts
-
-    Args:
-        value (float): get value
-        target (float): target value
-        tollerance (float, optional): tollerance. Defaults to 1.
-
-    Returns:
-        bool: True if value is in range
-    """
-    
-    is_close = isclose(value, target, abs_tol=tollerance, rel_tol=rel_tol)
-    
-    return is_close
+        return 10**(magnitude - 1)
 
 
 id_2_icao = {

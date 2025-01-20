@@ -1,9 +1,11 @@
 from .database import Airplane, retrive_airplane
-from numpy import radians, arcsin
+from numpy import radians, arcsin, sign
 from .logger import debug_logger
 from .client import IFClient
-from .FlightPlan import Fix
-from .utils import id_2_icao
+from .FlightPlan import Fix, FlightPhase
+from .utils import id_2_icao, get_tollerance
+from .convertion import knot2ms, ft2m
+from math import isclose
 
 class Aircraft(IFClient):
     def __init__(self, ip: str, port: int) -> None:
@@ -210,7 +212,7 @@ class Autopilot(IFClient):
         return round((1000 - value) / 2000, 2)
 
     @property
-    def vnav(self):
+    def vnavOn(self):
         return self.send_command("vnav/on")
 
     @Alt.setter
@@ -255,3 +257,117 @@ class Autopilot(IFClient):
     def BankOn(self, value: bool) -> None:
         self.send_command("bank", "on", write=True, data=value)
 
+
+class Autothrottle:
+    def __init__(self, aircraft: Aircraft, autopilot: Autopilot) -> None:
+        self.above_10k: bool = False
+        self.airplane: Airplane = aircraft.airplane
+        self.aircraft: Aircraft = aircraft
+        self.autopilot: Autopilot = autopilot
+        if self.airplane is None:
+            self.target_spd: float = knot2ms(250)
+        else:
+            self.target_spd: float = knot2ms(self.airplane.climb_v1)
+        self.current_spd: float = None
+        self.current_acc: float = None
+        self.target_acc: float = 16 # ~ 1 knot/s
+
+    def _change_spd(self) -> None:
+        self.current_spd = self.aircraft.mach if self.autopilot.SpdMode else self.aircraft.ias
+        self.current_acc = self.aircraft.accel * -1e3
+
+        if (not isclose(self.autopilot.Spd, self.target_spd, abs_tol=1e-4)):
+            self.autopilot.SpdOn = False
+            self.autopilot.Spd = self.target_spd
+
+        spd_tol = 0.01 if self.autopilot.SpdMode else knot2ms(3)
+
+        if not isclose(self.current_spd, self.target_spd, abs_tol=spd_tol):
+            delta_spd = self.target_spd - self.current_spd
+            self.target_acc *= sign(delta_spd)
+            delta_throttle = self.calc_delta_throttle()
+            debug_logger.debug(f"Delta throttle: {delta_throttle}")
+            if delta_throttle != 0 and not self.autopilot.SpdOn:
+                self.autopilot.Throttle += delta_throttle
+
+        else:
+            self.autopilot.SpdOn = True
+
+
+    def __call__(self, fix: Fix):
+        if fix.flight_phase == FlightPhase.CLIMB:
+            self.climb_call()
+        elif fix.flight_phase == FlightPhase.DESCENT:
+            self.descend_call()
+
+    def climb_call(self) -> None:
+        if self.airplane is not None:    
+            if (self.autopilot.SpdMode and not isclose(self.autopilot.Spd, self.airplane.climb_v3, abs_tol=1e-4)):
+                self.target_spd = self.airplane.climb_v3
+            elif (self.aircraft.msl >= ft2m(10_000) and not self.above_10k):
+                self.aircraft.Landing_Lights_toggle
+                self.target_spd = knot2ms(self.airplane.climb_v2)
+                self.above_10k = True
+        else:
+            if self.target_spd != self.autopilot.Spd:
+                self.target_spd = self.autopilot.Spd
+        self._change_spd()
+
+    def descend_call(self) -> None:
+        # TODO: finish this implementation
+        if self.airplane is not None:
+            if (self.autopilot.SpdMode and not isclose(self.autopilot.Spd, self.airplane.descent_v1, abs_tol=1e-2)):
+                self.target_spd = self.airplane.descent_v1
+            elif (not self.autopilot.SpdMode and self.above_10k):
+                self.target_spd = knot2ms(self.airplane.descent_v2)
+            elif (self.aircraft.msl <= ft2m(10_000) and self.above_10k):
+                self.aircraft.Landing_Lights_toggle
+                self.above_10k = False
+                self.target_spd = knot2ms(self.airplane.descent_v1)
+            self._change_spd_descend()
+    
+    def _change_spd_descend(self) -> None:
+        # TODO: finish this implementation
+        self.current_spd = self.aircraft.mach if self.autopilot.SpdMode else self.aircraft.ias
+        self.current_acc = self.aircraft.accel * -1e3
+
+        if (not isclose(self.autopilot.Spd, self.target_spd, abs_tol=1e-4)):
+            self.autopilot.SpdOn = False
+            self.autopilot.Spd = self.target_spd
+
+        spd_tol = 0.01 if self.autopilot.SpdMode else knot2ms(3)
+
+        if not isclose(self.current_spd, self.target_spd, abs_tol=spd_tol):
+            delta_spd = self.target_spd - self.current_spd
+            self.target_acc *= sign(delta_spd)
+            delta_throttle = self.calc_delta_throttle()
+            debug_logger.debug(f"Delta throttle: {delta_throttle}")
+            if delta_throttle != 0 and self.autopilot.Throttle > 0:
+                self.autopilot.Throttle += delta_throttle
+            elif delta_throttle != 0 and self.autopilot.Throttle == 0:
+                if self.autopilot.Vs < -ft2m(800):
+                    self.autopilot.Vs += ft2m(100)
+                    return True
+        else:
+            self.autopilot.SpdOn = True
+                
+                
+
+    def calc_delta_throttle(self) -> float:
+        if isclose(self.current_acc, self.target_acc, abs_tol=5*get_tollerance(self.target_acc)):
+            delta_acc = 0
+
+        else:
+            delta_acc = self.target_acc - self.current_acc
+            debug_logger.debug(f"Delta acc: {delta_acc}")
+
+        if delta_acc == 0:
+            return 0
+
+        elif abs(delta_acc) > 0.1:
+            debug_logger.debug(f"Delta: {delta_acc}\ndelta_throttle: {sign(delta_acc) * 0.05}")
+            return sign(delta_acc) * 0.05
+
+        else:
+            debug_logger.debug(f"Delta: {delta_acc}\n{sign(delta_acc) * 0.01}")
+            return sign(delta_acc) * 0.01
