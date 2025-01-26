@@ -124,7 +124,7 @@ class IFFPL(list[Fix]):
         def filter_func(x):
             if x["name"] is None:
                 return False
-            return x["name"].lower() != "toc"
+            return x["name"].lower() == "toc"
         
         if next(filter(filter_func, 
                        self.json_data["detailedInfo"]["flightPlanItems"]), None) is None:

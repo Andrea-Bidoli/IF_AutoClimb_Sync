@@ -12,9 +12,9 @@ dummy_fix = Fix("None", -1, -1, -1, -1)
 
 
 def takeoff(aircraft: Aircraft, autopilot: Autopilot) -> None:
-    logger.info("Starting takeoff")
     if not aircraft.is_on_ground:
         return
+    logger.info("Starting takeoff")
     k = None
     TO_setting: float = 0
     flex_temp: str = input("FLEX temperature : ") or ""
@@ -30,6 +30,7 @@ def takeoff(aircraft: Aircraft, autopilot: Autopilot) -> None:
         if temp >= aircraft.OAT:
             TO_setting = ((100-dto*10) - k * (temp - aircraft.OAT)) / 100
     except AttributeError: ...
+    except TypeError: ...
 
     if temp > 2 and TO_setting == 0:
         logger.warning("Aircraft don't support FLEX TEMP, please take off manually")
@@ -42,22 +43,23 @@ def takeoff(aircraft: Aircraft, autopilot: Autopilot) -> None:
         sleep(1)
     autopilot.Throttle = TO_setting
     logger.info(f"Starting takeoff\nTO n1:{aircraft.n1_target:.2f}")
-    while aircraft.is_on_ground or (aircraft.vs > fpm2ms(100) and aircraft.agl <= ft2m(100)): sleep(1)
-    aircraft.Landing_gear_toggle
-
+    while aircraft.is_on_ground or (aircraft.vs < fpm2ms(1100)): 
+        sleep(1)
+    if aircraft.is_on_ground:
+        aircraft.Landing_gear_toggle
 
 def vnav(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
     if fpl is None: 
         logger.warning("No flight plan found, unable to perfom VNAV")
         return
     logger.info("Starting VNAV")
-    autothrottle = Autothrottle(aircraft, autopilot)
     vnav_wps = fpl.update_vnav_wps(aircraft)
     waypoint = next(vnav_wps, dummy_fix)
-    desced_angle = radians(2)    
+    desced_angle = radians(2)
     time_target = 2 * 60
+    autothrottle = Autothrottle(aircraft, autopilot)
 
-
+    
     while waypoint != dummy_fix:
         # setting the next "important" waypoint for the program 
         if aircraft.next_index > waypoint.index:
@@ -75,7 +77,7 @@ def vnav(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
             autopilot.Vs = aircraft.gs * sin(angle)
             sleep(1)
 
-        elif waypoint.flight_phase == FlightPhase.CRUISE: 
+        elif waypoint.flight_phase == FlightPhase.CRUISE:
             delta_alt = waypoint.alt - autopilot.Alt
             target_vs = sign(delta_alt) * max(fpm2ms(200), min(fpm2ms(1000), abs(delta_alt / time_target))) # calculate the target vertical speed for stepclimb
             climb_time = delta_alt / target_vs
@@ -105,11 +107,14 @@ def vnav(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
                     autopilot.Alt = waypoint.alt
                 autopilot.Vs = target_vs
 
-def climbing_test(aircraft: Aircraft, autopilot: Autopilot):
+def climbing_test(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
+    logger.info("Starting autothrottle")
     while aircraft.is_on_ground:
         sleep(1)
     autothrottle = Autothrottle(aircraft, autopilot)
+    fix = Fix("None", -1, -1, -1, -1)
+    fix._flight_phase = FlightPhase.CLIMB
     while aircraft.msl < autopilot.Alt:
-        # change_spd part
-        autothrottle()
+        autothrottle(fix)
         sleep(1)
+    

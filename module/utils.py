@@ -14,7 +14,9 @@ from numpy import (
 from datetime import datetime, timedelta
 from time import perf_counter_ns
 from functools import wraps
-
+from sys import settrace
+from pathlib import Path
+from .logger import debug_logger
 # def track_all_methods_call_time(cls:object):
 #     """create a decorator that will track the total time spent in each method of a class
 #     and store it in the class attribute 'total_call_time'
@@ -132,4 +134,5 @@ id_2_icao = {
     "Embraer E175": "E175",
     "Embraer E190": "E190",
     "McDonnell Douglas MD-11": "MD11",
+    "E175": "E175",
 }

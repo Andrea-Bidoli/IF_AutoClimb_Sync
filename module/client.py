@@ -1,30 +1,34 @@
-from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM
+from socket import socket, AF_INET, SOCK_STREAM
 from functools import wraps
 from socket import error as socket_error
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from re import Match, compile, escape, MULTILINE
 from struct import pack, unpack
 from typing import Generator, Callable
 from .utils import time_method
 from .logger import logger, debug_logger
+from collections import defaultdict
 
 from json import loads
 import asyncio as aio
 import asyncudp
 
-def reconnect(func: Callable):
+
+type return_type = int | float | str | bool | None
+
+def reconnect(func):
     @wraps(func)
     def wrapper(self, *args, **kwargs):
-        try:
-            return func(self, *args, **kwargs)
-        except (socket_error, ConnectionError) as e:
-            if self.tries >= 10:
-                debug_logger.error(f"Connection failed after {self.tries} tries, exiting...")
-                raise e
-            debug_logger.error(f"{e}")
-            self.__init__(self.ip, self.port)
-            self.tries += 1
-            return func(self, *args, **kwargs)
+        tries = 0
+        max_tries = 10
+        while tries <= max_tries:
+            try:
+                return func(self, *args, **kwargs)
+            except (socket_error, ConnectionError) as e:
+                debug_logger.error(f"{e}")
+                self.__init__(self.ip, self.port)
+                tries += 1
+        debug_logger.error(f"Connection failed after {tries} consecutive tries, exiting...")
+        raise e
     return wrapper
 
 class IFClient:
@@ -33,7 +37,7 @@ class IFClient:
     total_call_time = 0
     tries = 0
 
-    read_converter = {
+    read_converter: dict[int, Callable[[bytes, int], return_type]] = {
         0: lambda x, _: unpack("<?", x)[0],
         1: lambda x, _: unpack("<i", x)[0],
         2: lambda x, _: unpack("<f", x)[0],
@@ -42,7 +46,7 @@ class IFClient:
         5: lambda x, _: unpack("q", x)[0],
     }
 
-    write_converter = {
+    write_converter: dict[int, Callable[[int, bool, return_type], bytes]] = {
         0: lambda cmd, wrt, data: pack("<i??", cmd, wrt, data),
         1: lambda cmd, wrt, data: pack("<i?i", cmd, wrt, data),
         2: lambda cmd, wrt, data: pack("<i?f", cmd, wrt, data),
@@ -63,7 +67,7 @@ class IFClient:
 
     @reconnect
     @time_method
-    def send_command(self, *args, write: bool = False, data: int = 0):
+    def send_command(self, *args, write: bool = False, data: return_type = None) -> return_type:
         def recv_exact(lenght: int) -> bytes:
             data = b""
             while len(data) < lenght:
@@ -87,10 +91,10 @@ class IFClient:
             _, lenght = unpack("<ii", first_response)
 
             second_response = recv_exact(lenght)
-            return self.__class__.read_converter[Type](second_response, lenght)
+            return self.__class__.read_converter.get(Type)(second_response, lenght)
 
         else:
-            byte_coomand = self.__class__.write_converter[Type](command, write, data)
+            byte_coomand = self.__class__.write_converter.get(Type)(command, write, data)
             return self.sock.sendall(byte_coomand)
 
     def findfirst(self, *args: tuple[str]) -> tuple[int, int]:
@@ -105,7 +109,11 @@ class IFClient:
         if tmp is None:
             raise ValueError(f"Command not found: {args}")
         tmp = tmp.group().split(",")[:-1]
-        tmp = map(int, tmp)
+        try:
+            tmp = map(int, tmp)
+        except ValueError:
+            tmp = (tmp[0], 4)            
+
         return tuple(tmp)
 
     def findall(self, *args: list[str]) -> Generator[tuple[int, int], None, None]:
@@ -129,42 +137,6 @@ def retrive_ip_port():
     result = aio.run(udp_listener(), debug=True)
     return result
 
-## sync way to check connection (slow)
-# def check_connection(ip, port=10112) -> str | None:
-#     with socket(AF_INET, SOCK_STREAM) as sock:
-#         try:
-#             sock.connect((ip, port))
-#             return ip
-#         except TimeoutError:
-#             return None
-#         except InterruptedError:
-#             return None
-
-# def check_connection_from_file(port=10112):
-#     with open("logs/ip.log", "a+") as f:
-#         f.seek(0)
-#         ips = f.read().split("\n")
-#         ips = filter(lambda x: bool(x), ips)
-#         f.seek(0, 2)
-
-#         with ThreadPoolExecutor(3) as executor:
-#             thread_list = [executor.submit(check_connection, ip, port) for ip in ips]
-#             for future in as_completed(thread_list):
-#                 result = future.result()
-#                 if result:
-#                     return result
-
-#         with socket(AF_INET, SOCK_DGRAM) as sock:
-#             sock.bind(("",15000))
-#             sock.settimeout(6)
-#             data, _ = sock.recvfrom(1024)
-#             ip = compile(r"192\.\d{1,3}\.\d{1,3}\.\d{1,3}").search(data.decode("utf-8")).group()
-#             f.write(ip + "\n")
-#             return ip
-#         return None
-
-
-
 async def udp_listener(ip: str='0.0.0.0', port: int=15000) -> tuple[str, int]:
     received = False
     sock = await asyncudp.create_socket(local_addr=(ip, port))
@@ -179,51 +151,3 @@ async def udp_listener(ip: str='0.0.0.0', port: int=15000) -> tuple[str, int]:
                 return '', -1
     finally:
         sock.close()
-
-
-
-async def check_connection_from_file(port=10112):
-    with open("logs/ip.log", "a+") as f:
-        f.seek(0)
-        ips = f.read().strip().split("\n")
-        ips = filter(lambda x: bool(x), ips)
-        f.seek(0, 2)
-        tasks = [aio.create_task(check_connection(ip, port)) for ip in ips]
-        
-        for completed in aio.as_completed(tasks):
-            result = await completed
-            if result:
-                for task in tasks:
-                    task.cancel()
-                return result
-
-        results = [task.result() for task in tasks]
-        if all(map(lambda x: x is None, results)):
-            debug_logger.warning("No IPs found, listening for UDP broadcast...")
-            ip, port = await udp_listener()
-            f.write("\n" + ip)
-            return ip, port
-        else:
-            results = tuple(filter(lambda x: x is not None, results))
-            if len(results) > 1:
-                debug_logger.warning(f"Multiple IPs found:\n{results}")
-            ip = results[0]
-            
-        return ip, port
-
-
-async def check_connection(ip, port) -> str | None:
-    try:
-        debug_logger.info(f"Checking connection to {ip}:{port}")
-        _, writer = await aio.open_connection(ip, port, ssl_handshake_timeout=30)
-        debug_logger.info(f"{ip}_writer: {writer}")
-        return ip
-    except aio.TimeoutError:
-        return None
-    finally:
-        try:
-            writer.close()
-            await writer.wait_closed()
-        except Exception as e:
-            debug_logger.error(f"{ip} :: {e}")
-            return None

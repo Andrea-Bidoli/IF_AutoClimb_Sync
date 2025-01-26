@@ -1,8 +1,8 @@
-from flight_phases import vnav, takeoff, climbing_test
-from module import Aircraft, Autopilot, logger, debug_logger, retrive_ip_port, IFFPL, init_loggers
+from module.flight_phases import vnav, takeoff, climbing_test
+from module import Aircraft, Autopilot, logger, debug_logger, retrive_ip_port, IFFPL, Airplane
 from atexit import register
+from tabulate import tabulate
 
-init_loggers(debug=False)
 ip, port = retrive_ip_port()
 
 
@@ -12,14 +12,17 @@ def main_loop() -> None:
     autopilot: Autopilot = Autopilot(ip, port)
     debug_logger.debug("Aircraft and Autopilot initialized")
     takeoff(aircraft, autopilot)
+    # if fpl is not None:
     vnav(aircraft, autopilot, fpl)
-    # climbing_test(aircraft, autopilot)
+    # else:
+    # climbing_test(aircraft, autopilot, fpl)
     logger.info("Autopilot finished")
 
 
 if __name__ == "__main__":
     # try:
-        register(lambda: debug_logger.info(f"n_commands {Aircraft.command_sent}, {Aircraft.total_call_time/1e9:.2f} seconds"))
+        tab_headers = ("n_commands", "total_call_time [s]")
+        register(lambda: debug_logger.info("\n"+tabulate([[Aircraft.command_sent, round(Aircraft.total_call_time/1e9, 2)],], headers=tab_headers)))
         main_loop()
     # except Exception:
         # debug_logger.error("", exc_info=True)
