@@ -6,7 +6,6 @@ from struct import pack, unpack
 from typing import Generator, Callable
 from .utils import time_method
 from .logger import logger, debug_logger
-from collections import defaultdict
 
 from json import loads
 import asyncio as aio
@@ -14,6 +13,81 @@ import asyncudp
 
 
 type return_type = int | float | str | bool | None
+
+class Node:
+    def __init__(self, name):
+        self.name: str = name
+        self.children: dict[str, Node] = {}
+        self.data = None
+
+    def insert(self, path_parts: list|tuple|str, data=None):
+        """Inserts a path into the tree using a dictionary for fast lookups."""
+        if isinstance(path_parts, str):
+            path_parts = path_parts.split()
+
+        node = self
+        for part in path_parts:
+            if part not in node.children:
+                node.children[part] = Node(part)
+            node = node.children[part]
+        if data:
+            try:
+                node.data = tuple(map(int, data))
+            except ValueError:
+                node.data = tuple(data)
+
+    def search(self, path_parts: list, current_depth=0) -> "Node"|None:
+        """Searches for a node, allowing partial path matching."""
+        if not path_parts:
+            return self
+        
+        first = path_parts[0]
+
+        # Exact match in current node's children
+        if first in self.children:
+            return self.children[first].search(path_parts[1:], current_depth + 1)
+
+        # If searching a subpath, do DFS search for partial matches
+        for child in self.children.values():
+            found = child.search(path_parts, current_depth + 1)
+            if found:
+                return found
+
+        return None
+
+    def __repr__(self, level=0, prefix="") -> str:
+        """Pretty prints the tree structure using dynamically generated Unicode characters."""
+        lines = []
+        
+        # Unicode characters using chr()
+        branch_symbol = chr(0x251C) + chr(0x2500) + chr(0x2500)  # ├──
+        last_branch_symbol = chr(0x2514) + chr(0x2500) + chr(0x2500)  # └──
+        vertical_pipe = chr(0x2502)  # │
+        space = "   "
+
+        # Root node
+        if level == 0:
+            lines.append(f"{self.name}")
+
+        # Children nodes
+        for idx, (child_name, child) in enumerate(self.children.items()):
+            is_last = idx == len(self.children) - 1
+            connector = last_branch_symbol if is_last else branch_symbol
+            new_prefix = prefix + (space if is_last else vertical_pipe + "  ")
+            lines.append(f"{prefix}{connector} {child.name}")
+            lines.extend(child.__repr__(level + 1, new_prefix).split("\n"))
+
+        return "\n".join(lines)
+
+def build_tree(paths:str) -> Node:
+    root = Node("root")
+    for path in paths.strip().split("\n"):
+        *data, path = path.split(",")
+        root.insert(path.split("/"), data)
+    return root
+
+
+
 
 def reconnect(func):
     @wraps(func)
@@ -32,6 +106,7 @@ def reconnect(func):
     return wrapper
 
 class IFClient:
+    # _instance = None
     command_sent = 0
     manifest = None
     total_call_time = 0
@@ -55,13 +130,18 @@ class IFClient:
         5: lambda cmd, wrt, data: pack("<i?q", cmd, wrt, data),
         -1: lambda cmd, wrt, data: pack("<i?", cmd, False),
     }
+    
+    # def __new__(cls):
+    #     if cls._instance is None:
+    #         cls._instance = super().__new__(cls)
+    #     return cls._instance
 
     def __init__(self, ip: str, port: int) -> None:
         self.port = port
         self.ip = ip
         self.sock = socket(AF_INET, SOCK_STREAM)
         self.sock.connect((self.ip, self.port))
-        self.manifest = self.send_command(-1, 4)
+        self.manifest = build_tree(self.send_command(-1, 4))
         with open("logs/manifest.txt", "w") as f:
             f.write(self.manifest)
 
@@ -80,9 +160,17 @@ class IFClient:
                 if isinstance(cmd, int) and isinstance(tp, int):
                     command, Type = cmd, tp
                 else:
-                    command, Type = self.findfirst(*args)
+                    finded = self.manifest.search(args)
+                    if finded is None:
+                        raise ValueError(f"Command not found: {args}")
+                    elif finded.value is not None:
+                        command, Type = finded.value
             case _:
-                command, Type = self.findfirst(*args)
+                finded = self.manifest.search(args)
+                if finded is None:
+                    raise ValueError(f"Command not found: {args}")
+                elif finded.value is not None:
+                    command, Type = finded.value
 
         if not write:
             self.sock.send(pack("<i?", command, write))
@@ -97,36 +185,36 @@ class IFClient:
             byte_coomand = self.__class__.write_converter.get(Type)(command, write, data)
             return self.sock.sendall(byte_coomand)
 
-    def findfirst(self, *args: tuple[str]) -> tuple[int, int]:
-        args: list[str] = list(args)
-        if "$" in args:
-            args.remove("$")
-            pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b$"
-        else:
-            pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b.*"
-        pattern = compile(pattern, MULTILINE)
-        tmp: Match[str] = pattern.search(self.manifest)
-        if tmp is None:
-            raise ValueError(f"Command not found: {args}")
-        tmp = tmp.group().split(",")[:-1]
-        try:
-            tmp = map(int, tmp)
-        except ValueError:
-            tmp = (tmp[0], 4)            
+    # def findfirst(self, *args: tuple[str]) -> tuple[int, int]:
+    #     args: list[str] = list(args)
+    #     if "$" in args:
+    #         args.remove("$")
+    #         pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b$"
+    #     else:
+    #         pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b.*"
+    #     pattern = compile(pattern, MULTILINE)
+    #     tmp: Match[str] = pattern.search(self.manifest)
+    #     if tmp is None:
+    #         raise ValueError(f"Command not found: {args}")
+    #     tmp = tmp.group().split(",")[:-1]
+    #     try:
+    #         tmp = map(int, tmp)
+    #     except ValueError:
+    #         tmp = (tmp[0], 4)            
 
-        return tuple(tmp)
+    #     return tuple(tmp)
 
-    def findall(self, *args: list[str]) -> Generator[tuple[int, int], None, None]:
-        args: list[str] = list(args)
+    # def findall(self, *args: list[str]) -> Generator[tuple[int, int], None, None]:
+    #     args: list[str] = list(args)
 
-        if "$" in args:
-            args.remove("$")
-            pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b$"
-        else:
-            pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b.*"
-        pattern = compile(pattern, MULTILINE)
-        tmp = pattern.findall(self.manifest)
-        return map(lambda x: tuple(map(int, x.split(",")[:-1])), tmp)
+    #     if "$" in args:
+    #         args.remove("$")
+    #         pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b$"
+    #     else:
+    #         pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b.*"
+    #     pattern = compile(pattern, MULTILINE)
+    #     tmp = pattern.findall(self.manifest)
+    #     return map(lambda x: tuple(map(int, x.split(",")[:-1])), tmp)
 
     def __del__(self):
         self.sock.close()

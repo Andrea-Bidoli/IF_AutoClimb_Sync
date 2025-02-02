@@ -72,7 +72,7 @@ class Fix:
         return self._flight_phase
 
 class IFFPL(list[Fix]):
-    def __new__(cls, json_data: str | dict, write: bool = False) -> "IFFPL":
+    def __new__(cls, json_data: str | dict | TextIOWrapper, write: bool = False) -> "IFFPL":
         if not isinstance(json_data, (str, bytearray, bytes, dict, TextIOWrapper)):
             raise ValueError("json_data must be a string or a dictionary")
         if isinstance(json_data, TextIOWrapper):
@@ -160,10 +160,11 @@ class IFFPL(list[Fix]):
 
         else:
             copy = [fix for fix in self if fix.alt > 0]
-            copy = sorted(copy, key=lambda x: x.alt, reverse=True)
+            # TODO: check if this is the best way to do this
+            copy = sorted(copy, key=lambda x: (x.alt, x.index), reverse=True)
             tmp: set[Fix] = set()
             tmp.add(copy[0])
-            for fix1, fix2 in pairwise(copy):
+            for fix1, fix2 in pairwise(copy[::-1]):
                 if abs(fix1.alt - fix2.alt) <= ft2m(2000):
                     tmp.add(fix1)
                     tmp.add(fix2)

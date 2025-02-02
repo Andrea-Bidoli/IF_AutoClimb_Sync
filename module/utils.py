@@ -133,6 +133,7 @@ id_2_icao = {
     "Bombardier CRJ-1000": "CRJX",
     "Embraer E175": "E175",
     "Embraer E190": "E190",
-    "McDonnell Douglas MD-11": "MD11",
+    "MD-11": "MD11",
     "E175": "E175",
+    "DC-10F": "DC10F",
 }

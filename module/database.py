@@ -230,6 +230,26 @@ database = {
         descent_v3=250,
         k=None
     ),
+    "MD11":Airplane(
+        icao="MD11",
+        climb_v1=250,
+        climb_v2=330,
+        climb_v3=0.82,
+        descent_v1=0.82,
+        descent_v2=330,
+        descent_v3=250,
+        k=0.4
+    ),
+    "DC10F": Airplane(
+        icao="DC10F",
+        climb_v1=250,
+        climb_v2=300,
+        climb_v3=0.82,
+        descent_v1=0.82,
+        descent_v2=300,
+        descent_v3=250,
+        k=0.4
+    ),
 }
 
 

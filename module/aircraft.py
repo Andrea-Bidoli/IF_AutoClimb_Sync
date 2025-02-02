@@ -3,9 +3,10 @@ from numpy import radians, arcsin, sign
 from .logger import debug_logger
 from .client import IFClient
 from .FlightPlan import Fix, FlightPhase
-from .utils import id_2_icao, get_tollerance
+from .utils import id_2_icao
 from .convertion import knot2ms, ft2m
 from math import isclose
+from enum import Enum
 
 class Aircraft(IFClient):
     def __init__(self, ip: str, port: int) -> None:
@@ -17,6 +18,11 @@ class Aircraft(IFClient):
             debug_logger.warning(
                 f"Airplane {self.send_command('aircraft/0/name')} not found in database"
             )
+        self._Flaps_configs = range(self.send_command("flaps", "stops"))
+    
+    @property
+    def Flaps_configs(self) -> range:
+        return self._Flaps_configs
 
     ## Aircrafs status
     @property
@@ -53,12 +59,21 @@ class Aircraft(IFClient):
 
     @property
     def n1(self) -> float:
-        return round(self.send_command("0", "n1"), 2)
+        """return the N1 value of the engine if available, otherwise return the RPM value
 
+        Returns:
+            float: N1 or RPM value
+        """
+        try:
+            return round(self.send_command("0", "n1"), 2)
+        except ValueError:
+            return round(self.send_command("0", "rpm"), 2)
     @property
     def n1_target(self) -> float:
-        return round(self.send_command("1", "n1_target"), 2)
-
+        try:
+            return round(self.send_command("0", "n1_target"), 2)
+        except ValueError:
+            return -1
     @property
     def thrust(self) -> float:
         return round(self.send_command("0", "thrust_percentage"), 2)
@@ -139,15 +154,24 @@ class Aircraft(IFClient):
         return self.send_command("landing_lights_switch/state")
     
     @property
-    def seat_belt_status(self) -> None:
-        return self.send_command("seatbelt")
+    def seat_belt_status(self) -> bool:
+        return bool(self.send_command("seatbelt"))
     @property
     def seat_belt_toggle(self) -> None:
         self.send_command("seatbelt", write=True, data= ( not self.seat_belt_status))
-    
+
     @property
-    def landing_gear_status(self) -> None:
-        return self.send_command("landing_gear/animation_state")
+    def landing_gear_status(self) -> bool:
+        return bool(self.send_command("landing_gear/animation_state"))
+
+    @property
+    def Flaps(self) -> int:
+        return self.send_command("flaps", "state")
+
+    @Flaps.setter
+    def Flaps(self, value: int) -> None:
+        value = max(0, min(value, len(self.Flaps_configs)-1))
+        self.send_command("flaps", "state", write=True, data=value)
 
     @property
     def α(self) -> float:
@@ -157,6 +181,10 @@ class Aircraft(IFClient):
     def γ(self) -> float:
         crosswind = self.send_command("crosswind_component")
         return arcsin(crosswind / self.tas)
+
+    @property
+    def track(self) -> float:
+        return self.send_command("0/course")
 
 
 class Autopilot(IFClient):
@@ -295,7 +323,7 @@ class Autothrottle:
         self.target_acc: float = 9 # ~ 1.1 knot/s
         self.reach_target: bool = False
 
-    def _change_spd(self) -> None:
+    def _change_spd_climb(self) -> None:
         self.current_spd = self.aircraft.mach if self.autopilot.SpdMode else self.aircraft.ias
         self.current_acc = self.aircraft.accel * -1e3
 
@@ -329,32 +357,26 @@ class Autothrottle:
                 self.autopilot.SpdOn = False
                 self.target_spd = self.airplane.climb_v3
             elif (self.aircraft.msl >= ft2m(10_000) and not self.above_10k):
-                if self.aircraft.landing_lights_status:
-                    self.aircraft.Landing_Lights_toggle
-                if self.aircraft.seat_belt_status:
-                    self.aircraft.seat_belt_toggle
                 self.target_spd = knot2ms(self.airplane.climb_v2)
                 self.reach_target = False
                 self.autopilot.SpdOn = False
                 self.above_10k = True
-        self._change_spd()
+            self._change_spd_climb()
 
     def descend_call(self) -> None:
-        return
-        # TODO: add this implementation
-        if self.autopilot.SpdMode:
-            self.target_spd = self.airplane.descent_v1
-        elif self.aircraft.msl >= ft2m(12_000) and self.above_10k and not self.autopilot.SpdMode:
-            self.above_10k = False
-            self.target_spd = knot2ms(self.airplane.descent_v2)
-        elif self.aircraft.msl <= ft2m(10_000) and not self.aircraft.landing_lights_status:
-            self.aircraft.Landing_Lights_toggle
-        else:
-            self.target_spd = knot2ms(self.airplane.descent_v3)        
-        ...
+        if self.airplane is not None:
+            # TODO: add this implementation
+            if self.autopilot.SpdMode:
+                self.target_spd = self.airplane.descent_v1
+            elif self.aircraft.msl <= ft2m(12_000) and self.above_10k:
+                self.target_spd = knot2ms(self.airplane.descent_v1)
+                self.above_10k = False
+            elif not self.autopilot.SpdMode:
+                self.target_spd = knot2ms(self.airplane.descent_v2)
+            ...
     
     def _change_spd_descend(self) -> None:
-        # TODO: add this implementation        
+        # TODO: add this implementation
         ...
 
     def calc_delta_throttle(self) -> float:

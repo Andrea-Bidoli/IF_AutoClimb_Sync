@@ -1,5 +1,5 @@
-from module.flight_phases import vnav, takeoff, climbing_test
-from module import Aircraft, Autopilot, logger, debug_logger, retrive_ip_port, IFFPL, Airplane
+from module.flight_phases import vnav, takeoff, Only_Authothrottle
+from module import Aircraft, Autopilot, logger, debug_logger, retrive_ip_port, IFFPL, retrive_airplane
 from atexit import register
 from tabulate import tabulate
 
@@ -11,13 +11,30 @@ def main_loop() -> None:
     fpl = IFFPL(aircraft.send_command("full_info"), write=True)
     autopilot: Autopilot = Autopilot(ip, port)
     debug_logger.debug("Aircraft and Autopilot initialized")
+    
+    only_AT = False
+    match input("Only AT? (y/n): ")[:1]:
+        case "y":
+            only_AT = True
+        case "n":
+            only_AT = False
+        case _:
+            logger.error("Invalid input, only AT will be used")
+            only_AT = True
+    if aircraft.airplane is not None:
+        data = list(zip(*list((vars(aircraft.airplane).items()))))
+        logger.info("\n"+tabulate(data, headers="firstrow"))
+    
     takeoff(aircraft, autopilot)
-    # if fpl is not None:
-    vnav(aircraft, autopilot, fpl)
-    # else:
-    # climbing_test(aircraft, autopilot, fpl)
-    logger.info("Autopilot finished")
+    if not only_AT:
+        vnav(aircraft, autopilot, fpl)
+    else:
+        Only_Authothrottle(aircraft, autopilot, fpl)
 
+    logger.info("Autopilot finished")
+    if aircraft.airplane is not None:
+        logger.info("\n"+tabulate(data, headers="firstrow"))
+    
 
 if __name__ == "__main__":
     # try:
