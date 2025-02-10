@@ -1,22 +1,28 @@
-from module import ms2fpm, fpm2ms, ft2m, m2ft
 from module import IFFPL, Fix, dist_to_fix, FlightPhase
 from module import Aircraft, Autopilot, Autothrottle
-from module import format_time
 from module import logger, debug_logger
 
+from .convertion import PintUnitManager, Quantity
 from numpy import arctan2, sin, sign, radians
 from numpy import cos, arccos, sqrt, arcsin
 # from datetime import datetime, timedelta
 from time import sleep
 from math import isclose
 
+from enum import Enum, auto
+
+
 dummy_fix = Fix("None", -1, -1, -1, -1)
+unit: PintUnitManager = PintUnitManager()
+class Spd(Enum):
+    clb_V1 = auto()
+    clb_V2 = auto()
+    clb_V3 = auto()
+    Vr = auto()
+    crz_V = auto()
+    
 
-
-
-
-def takeoff(aircraft: Aircraft, autopilot: Autopilot) -> None:
-    global flap_spd
+def takeoff(aircraft: Aircraft, autopilot: Autopilot, inputs: dict[str, str]) -> None:
     if not aircraft.is_on_ground:
         return
     logger.info("Starting takeoff")
@@ -38,12 +44,9 @@ def takeoff(aircraft: Aircraft, autopilot: Autopilot) -> None:
     except AttributeError: ...
     except TypeError: ...
 
-    # set the flap retracting speed (in knots)
-    # try:
-    #     flap_spd = abs(int(flap_spd))
-    # except ValueError:
-    #     flap_spd = 200
-            
+    if inputs.get("Vr"):
+        autopilot.Spd = (int(inputs["Vr"])*unit.knot).to(unit.ms).magnitude
+
     if temp > 2 and TO_setting == 0:
         logger.warning("Aircraft don't support FLEX TEMP, please take off manually")
         return
@@ -64,108 +67,145 @@ def takeoff(aircraft: Aircraft, autopilot: Autopilot) -> None:
     debug_logger.debug("Landing gear is down, trying to retract")
     aircraft.Landing_gear_toggle
 
+class Vnav:
+    def __init__(self, aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL, inputs: dict[str, str]):
+        if fpl is None:
+            logger.warning("No flight plan found, unable to perform VNAV")
+            return
+
+        self.above_10k = False
+
+        self.aircraft = aircraft
+        self.autopilot = autopilot
+        self.fpl = fpl
+        self.inputs = inputs
+        self.vnav_wps = fpl.vnav_wps()
+        self.autothrottle = Autothrottle(self.aircraft, self.autopilot)
+        self.check_inputs()
+
+    def check_inputs(self):
+        if v := self.inputs.get(Spd.clb_V1):
+            self.aircraft.airplane.climb_v1 = (int(v)*unit.knot).to(unit.ms).magnitude        
+        if v := self.inputs.get(Spd.clb_V2):
+            self.aircraft.airplane.climb_v2 = (int(v)*unit.knot).to(unit.ms).magnitude
+        if v := self.inputs.get(Spd.clb_V3):
+            self.aircraft.airplane.climb_v3 = (int(v)*unit.knot).to(unit.ms).magnitude
+        if v := self.inputs.get(Spd.crz_V):
+            self.aircraft.airplane.cruise_speed = float(v)
+
+    def set_speed(self, target_speed: Quantity) -> None:
+        """Set the target speed and update both autopilot and autothrottle."""
+        self.autothrottle.set_target_speed(target_speed)
+        logger.info(f"Speed set to {target_speed.to(unit.knot):.0f} knots")
     
-def vnav(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
-    if fpl is None: 
-        logger.warning("No flight plan found, unable to perfom VNAV")
-        return
-    logger.info("Starting VNAV")
-    vnav_wps = fpl.update_vnav_wps(aircraft)
-    waypoint = next(vnav_wps, dummy_fix)
-    desced_angle = radians(2)
-    time_target = 2 * 60
-    if aircraft.airplane is not None:
-        autothrottle = Autothrottle(aircraft, autopilot)
+    def __call__(self) -> None:
+        # TODO: define `waipoint`
+        descent_angle = radians(3)
+        time_target = 2 * 60
 
-    
-    while waypoint != dummy_fix:
-        # setting the next "important" waypoint for the program 
-        if aircraft.next_index > waypoint.index:
-            waypoint = next(vnav_wps, dummy_fix)
-            logger.info(f"Next waypoint: {waypoint.name} in {format_time(dist_to_fix(waypoint, fpl, aircraft)/aircraft.gs)}")
-            continue
-
-
+        if self.aircraft.next_index > waypoint.index:
+            waypoint = next(self.vnav_wps, dummy_fix)
+            return
+        
         match waypoint.flight_phase:
             case FlightPhase.CLIMB:
-                if autopilot.Alt != waypoint.alt:
-                    autopilot.Alt = waypoint.alt
-                if aircraft.airplane is not None:
-                    autothrottle(waypoint)
-                if aircraft.msl >= ft2m(10_000) and aircraft.landing_lights_status:
-                    if aircraft.landing_lights_status:
-                        aircraft.Landing_Lights_toggle
-                    if aircraft.seat_belt_status:
-                        aircraft.seat_belt_toggle
-
-                delta_alt = waypoint.alt - aircraft.msl
-                dist = dist_to_fix(waypoint, fpl, aircraft)
-                angle = arctan2(delta_alt, dist)
-                autopilot.Vs = aircraft.gs * sin(angle)
-                sleep(1)
-
+                self.handle_climb(waypoint)
             case FlightPhase.CRUISE:
-                delta_alt = waypoint.alt - autopilot.Alt
-                target_vs = sign(delta_alt) * max(fpm2ms(200), min(fpm2ms(1000), abs(delta_alt / time_target))) # calculate the target vertical speed for stepclimb
-                climb_time = delta_alt / target_vs
-                ete_fix = dist_to_fix(waypoint, fpl, aircraft) / aircraft.gs - climb_time # estimated time to fix
-                
-                if ete_fix <= 0:
-                    # changing the altitude and vertical speed of the aircraft
-                    logger.info(f"new Altitude: {m2ft(waypoint.alt):.0f} Vs: {ms2fpm(target_vs):.0f} ETE: {format_time(ete_fix)}")
-                    autopilot.Alt = waypoint.alt
-                    autopilot.Vs = target_vs
-                    vnav_wps = fpl.update_vnav_wps(aircraft)
-                    continue
-                elif ete_fix > 6 * 60:
-                    logger.info(f"Next waypoint: {waypoint.name} in {format_time(dist_to_fix(waypoint, fpl, aircraft)/aircraft.gs)}")
-                    sleep(5*60)
-                else:
-                    sleep(10)
-        
+                self.handle_cruise(waypoint, time_target)
             case FlightPhase.DESCENT:
-                break
-                delta_alt = waypoint.alt - autopilot.Alt
-                dist = dist_to_fix(waypoint, fpl, aircraft)
-                angle = arctan2(delta_alt, dist)
-                target_vs = aircraft.gs * sin(angle)
-                if angle > desced_angle:
-                    if autopilot.Alt != waypoint.alt:
-                        autopilot.Alt = waypoint.alt
-                    autopilot.Vs = target_vs
+                return
+                self.handle_descent(waypoint, descent_angle)
+        
+        sleep(1)
 
-class lnav:
+    def handle_climb(self, waypoint: Fix):
+        self.autothrottle(waypoint)
+
+        if not self.above_10k and self.aircraft.msl >= (10_000*unit.ft).to(unit.m).magnitude:
+            if self.aircraft.landing_lights_status:
+                self.aircraft.Landing_Lights_toggle
+            if self.aircraft.seat_belt_status:
+                self.aircraft.seat_belt_toggle
+            self.above_10k = True
+
+        delta_alt = waypoint.alt - self.aircraft.msl
+        dist = dist_to_fix(waypoint, self.fpl, self.aircraft)
+        vs_sin = delta_alt / (dist**2 + delta_alt**2)**.5
+        self.autopilot.Vs = self.aircraft.gs * vs_sin
+
+    def handle_cruise(self, waypoint: Fix, time_target: float):
+        delta_alt = waypoint.alt - self.autopilot.Alt
+        target_vs = sign(delta_alt) * max((200*unit.ft).to(unit.m), min((1000*unit.ft).to(unit.m).magnitude, abs(delta_alt / time_target)))
+        climb_time = delta_alt / target_vs
+        ete_fix = dist_to_fix(waypoint, self.fpl, self.aircraft) / self.aircraft.gs - climb_time
+        
+        if not isclose(self.autopilot.Spd, self.aircraft.airplane.cruise_speed, abs_tol=1e-4):
+            self.autothrottle.set_target_speed(self.aircraft.airplane.cruise_speed)
+        self.autothrottle(waypoint)
+        if ete_fix <= 0:
+            self.autopilot.Alt = waypoint.alt
+            self.autopilot.Vs = target_vs
+            self.vnav_wps = self.fpl.update_vnav_wps(self.aircraft)
+        elif ete_fix > 6 * 60:
+            sleep(5 * 60)
+        else:
+            sleep(10)
+
+    def handle_descent(self, waypoint: Fix, sin_angle: float):
+        # TODO: implement descent
+        delta_alt = waypoint.alt - self.autopilot.Alt
+        dist = dist_to_fix(waypoint, self.fpl, self.aircraft)
+        vs_sin = delta_alt / (dist**2 + delta_alt**2)**.5
+        target_vs = self.aircraft.gs * vs_sin
+        
+        if not isclose(self.autopilot.Alt, waypoint.alt, abs_tol=1e-4):
+            self.autopilot.Alt = waypoint.alt
+        self.autopilot.Vs = min(sin_angle, target_vs)
+
+class Lnav:
     def __init__(self, aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
         self.aircraft = aircraft
         self.autopilot = autopilot
         self.fpl = fpl
         self.target_bank = radians(30)
         self.next_index = self.aircraft.next_index
-        
+    
+    def create_holding(self, fix: Fix, lenght: Quantity, direction: Quantity, width: float, side: str = 'left'):
+        def create_fix(fix: Fix, dist: Quantity, direction_: Quantity, index: int):
+            lat2 = fix.lat + (dist.to(unit.nm)/60)*cos(direction_.to(unit.rad))
+            lon2 = fix.lon + (dist.to(unit.nm)/60)*sin(direction_.to(unit.rad)) / cos(lat2)
+            return Fix("Holding-1", -1, lat2, lon2, index)
+        directions = [90, 180, 270]
+        match side.lower():
+            case 'left'|'l':
+                directions = map(lambda x: x*-1, directions)
+            case 'right'|'r':
+                direction = (i for i in directions)
+        fixes = [fix]
+        for i, direction_ in enumerate(directions):
+            fixes.append(create_fix(fixes[-1], lenght if i % 2 == 0 else width, direction + direction_*unit.deg, i+1))
+        return fixes
+
+    def execute_holding(self, holding: tuple[Fix, Fix, Fix, Fix]):
+        ...
+
+    @staticmethod
+    def get_track_angle(fix1: Fix, fix2: Fix) -> Quantity:
+        lat1, lon1, lat2, lon2 = fix1.lat, fix1.lon, fix2.lat, fix2.lon
+        dlon = lon2 - lon1
+        x = sin(dlon) * cos(lat2)
+        y = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dlon)
+        return arctan2(x, y)*unit.rad
+
+
     def __call__(self):
-        p1, p2, p3 = self.fpl[self.next_index-1:self.next_index+1]
+        true_track = self.get_track_angle(self.fpl[self.next_index], self.fpl[self.next_index+1])
+        variation = self.aircraft.send_command("magnetic_variation")
+        mag_track = true_track + variation
+        self.autopilot.Hdg += mag_track - self.autopilot.Hdg
         
-        p1 = cos(p1.lon)*cos(p1.lat), sin(p1.lon)*cos(p1.lat), sin(p1.lat)
-        p2 = cos(p2.lon)*cos(p2.lat), sin(p2.lon)*cos(p2.lat), sin(p2.lat)
-        p3 = cos(p3.lon)*cos(p3.lat), sin(p3.lon)*cos(p3.lat), sin(p3.lat)
-        
-        angle = arccos(p1*p2 + p2*p3 + p3*p1)
-        target_track = self.aircraft.send_command("gps", "desired_track") + (radians(180) - angle)
-        start_dist = 6371e3 * sqrt(1/sin(angle/2)**2 - 1)
 
-        if self.aircraft.dist_to_next <= start_dist and not self.autopilot.BankOn:
-            self.autopilot.HdgOn = False
-            self.autopilot.Bank = self.target_bank
-            self.autopilot.BankOn = True
-        elif isclose(self.aircraft.track, target_track, abs_tol=radians(1), rel_tol=0.001):
-            self.autopilot.BankOn = False
-            self.autopilot.Hdg = target_track
-            self.autopilot.HdgOn = True
-            self.autopilot.Bank = 0
-
-
-
-def Only_Authothrottle(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
+def Only_Authothrottle(aircraft: Aircraft, autopilot: Autopilot, inputs: dict[str, str]):
     logger.info("Starting autothrottle")
     while aircraft.is_on_ground:
         sleep(1)
@@ -173,7 +213,7 @@ def Only_Authothrottle(aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL):
     fix = Fix("None", -1, -1, -1, -1)
     fix._flight_phase = FlightPhase.CLIMB
     while aircraft.msl < autopilot.Alt:
-        if aircraft.msl >= ft2m(10_000) and aircraft.landing_lights_status:
+        if aircraft.msl >= (10_000*unit.ft).to(unit.m) and aircraft.landing_lights_status:
             if aircraft.landing_lights_status:
                 aircraft.Landing_Lights_toggle
             if aircraft.seat_belt_status:

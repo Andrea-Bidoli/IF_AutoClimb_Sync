@@ -21,12 +21,12 @@ class App:
         self.fpl_db = {"fpl":fpl, "page": 0}
         self.aircraft_db = aircraft
         self.autopilot_db = autopilot
-
         self.input_str = ""
 
         curses.wrapper(self.setup_screen)
 
     def perf_page(self):
+        self.selected_UpDown %= len(self.db)
         self.FMC_win.clear()
         height, width  = self.FMC_win.getmaxyx()
         self.FMC_win.addstr(0, width//2 - 5, "Perf Page")
@@ -37,6 +37,7 @@ class App:
         self.FMC_win.refresh()
 
     def dep_page(self):
+        self.selected_UpDown %= len(self.db)
         self.FMC_win.clear()
         height, width  = self.FMC_win.getmaxyx()
         self.FMC_win.addstr(0, width//2 - 4, "Dep Page")
@@ -45,6 +46,7 @@ class App:
         self.FMC_win.refresh()
         
     def arr_page(self):
+        self.selected_UpDown %= len(self.db)
         self.FMC_win.clear()
         height, width  = self.FMC_win.getmaxyx()
         self.FMC_win.addstr(0, width//2 - 4, "Arr Page")
@@ -54,19 +56,48 @@ class App:
 
     def fpl_page(self):
         self.FMC_win.clear()
-        height, width  = self.FMC_win.getmaxyx()
+        height, width = self.FMC_win.getmaxyx()
+
+        # Define pagination
         page = self.fpl_db["page"]
         fpl: IFFPL = self.fpl_db["fpl"]
-        start_index = page*(height-2)
-        end_index = start_index + height-2
-        self.FMC_win.addstr(0, width//2 - 5, "FPL Page")
-        self.FMC_win.addnstr(height-1, 0, "Input: " + self.input_str, width)
+        items_per_page = height - 2  # Number of visible items
 
-        for i, fix in enumerate(fpl[start_index:end_index], start=0):
+        num_pages = max(1, (len(fpl) + items_per_page - 1) // items_per_page)  # Total pages
+        page = max(0, min(page, num_pages - 1))  # Keep page in bounds
+
+        start_index = page * items_per_page
+        end_index = min(start_index + items_per_page, len(fpl))
+
+        self.selected_UpDown %= (end_index - start_index)  # Limit selection within current page
+
+        self.FMC_win.addstr(0, width // 2 - 5, f"FPL Page {page + 1}/{num_pages}")
+
+        for i, fix in enumerate(fpl[start_index:end_index]):
             cursor = ">" if i == self.selected_UpDown else " "
-            self.FMC_win.addstr(i+1, 0, f"{cursor}{fix.name}")
-        
+            self.FMC_win.addstr(i + 1, 0, f"{cursor}{fix.name}")
+
         self.FMC_win.refresh()
+
+
+    # def fpl_page(self):
+    #     self.FMC_win.clear()
+    #     height, width  = self.FMC_win.getmaxyx()
+    #     self.selected_UpDown %= height-2
+
+    #     page = self.fpl_db["page"]
+    #     fpl: IFFPL = self.fpl_db["fpl"]
+    #     start_index = page*(height-2)
+    #     end_index = start_index + height-2
+    #     self.FMC_win.addstr(0, width//2 - 5, "FPL Page")
+    #     self.FMC_win.addnstr(height-1, 0, "Input: " + self.input_str, width)
+    #     self.win2.clear()
+    #     self.win2.addstr(0, 0, f"UpDown: {self.selected_UpDown} : height-2 : {self.height-2}")
+    #     for i, fix in enumerate(fpl[start_index:end_index], start=0):
+    #         cursor = ">" if i == self.selected_UpDown else " "
+    #         self.FMC_win.addstr(i+1, 0, f"{cursor}{fix.name}")
+        
+    #     self.FMC_win.refresh()
         
         
         
@@ -79,7 +110,7 @@ class App:
         self.height, self.width = self.screen.getmaxyx()
         # create 2 windows and a vertical line as separator
         self.FMC_win = curses.newwin(self.height, self.width//2, 0, 0)
-        self.win2 = curses.newwin(self.height, self.width//2-1, 0, self.width//2+1)
+        self.win2 = curses.newwin(self.height, self.width//2-2, 0, self.width//2+2)
         self.screen.vline(0, self.width//2, curses.ACS_VLINE, self.height)
         # setup the 2 windows
         self.FMC_win.clear()
@@ -109,7 +140,9 @@ class App:
             if (new_height, new_width) != (self.height, self.width):
                 self.update_ui()
 
-            db = getattr(self, f"{self.pages[self.selected_RightLeft].lower()}_db")
+            # get database
+            self.db = getattr(self, f"{self.pages[self.selected_RightLeft].lower()}_db")
+            # get and call the page function
             getattr(self, f"{self.pages[self.selected_RightLeft].lower()}_page")()
 
             key = self.screen.getch()
@@ -120,25 +153,13 @@ class App:
                 case curses.KEY_DOWN: # Down arrow
                     # TODO: Fix that when selected_UpDown is 0, it should go to the prev page
                     # problem could be when using len(db["fpl"]) instead of len(height-2)
-                    if self.pages[self.selected_RightLeft] == "FPL":
-                        self.selected_UpDown = (self.selected_UpDown + 1) % (self.height-2)
-                        if self.selected_UpDown == self.height-1:
-                            self.fpl_db["page"] += 1
-                            self.selected_UpDown = 0
-                    else:
-                        self.selected_UpDown = (self.selected_UpDown + 1) % len(db)
-                
+                    self.selected_UpDown += 1
+
                 case curses.KEY_UP: # Up arrow
                     # TODO: Fix that when selected_UpDown is 0, it should go to the prev page
                     # problem could be when using len(db["fpl"]) instead of len(height-2)
-                    if self.pages[self.selected_RightLeft] == "FPL":
-                        self.selected_UpDown = (self.selected_UpDown - 1) % (self.height-2)
-                        if self.selected_UpDown == self.height-1:
-                            self.fpl_db["page"] -= 1
-                            self.selected_UpDown = self.height-2
-                    else:
-                        self.selected_UpDown = (self.selected_UpDown - 1) % len(db)
-                
+                    self.selected_UpDown -= 1
+
                 case curses.KEY_LEFT: # Left arrow
                     self.selected_RightLeft = (self.selected_RightLeft - 1) % len(self.pages)
                     self.selected_UpDown = 0
@@ -157,10 +178,9 @@ class App:
                     if self.input_str.lower() in ("exit", "quit"):
                         break
                     if self.selected_RightLeft != 1:
-                        db_key = list(db.keys())[self.selected_UpDown]
-                        db[db_key] = self.input_str
+                        db_key = list(self.db.keys())[self.selected_UpDown]
+                        self.db[db_key] = self.input_str
                         self.input_str = ""
-
             self.screen.refresh()
 
 

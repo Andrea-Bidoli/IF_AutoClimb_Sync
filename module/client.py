@@ -1,7 +1,7 @@
 from socket import socket, AF_INET, SOCK_STREAM
 from functools import wraps
 from socket import error as socket_error
-from re import Match, compile, escape, MULTILINE
+from re import Match, compile, escape, MULTILINE, split
 from struct import pack, unpack
 from typing import Generator, Callable
 from .utils import time_method
@@ -18,7 +18,7 @@ class Node:
     def __init__(self, name):
         self.name: str = name
         self.children: dict[str, Node] = {}
-        self.data = None
+        self.value = None
 
     def insert(self, path_parts: list|tuple|str, data=None):
         """Inserts a path into the tree using a dictionary for fast lookups."""
@@ -32,20 +32,30 @@ class Node:
             node = node.children[part]
         if data:
             try:
-                node.data = tuple(map(int, data))
+                node.value = tuple(map(int, data))
             except ValueError:
-                node.data = tuple(data)
+                node.value = tuple(data)
 
-    def search(self, path_parts: list, current_depth=0) -> "Node"|None:
+    def search(self, *path_parts, current_depth=0) -> "Node":
         """Searches for a node, allowing partial path matching."""
         if not path_parts:
             return self
+
+        path_parts = map(lambda x: split(r"[^a-zA-Z0-9_.]", x), path_parts)
+        new_path_parts = []
         
+        for path in path_parts:
+            if isinstance(path, str):
+                new_path_parts.append(path)
+            elif isinstance(path, (list, tuple)):
+                new_path_parts.extend(path)
+        
+        path_parts = new_path_parts
         first = path_parts[0]
 
         # Exact match in current node's children
         if first in self.children:
-            return self.children[first].search(path_parts[1:], current_depth + 1)
+            return self.children[first].search(*path_parts[1:], current_depth=current_depth + 1)
 
         # If searching a subpath, do DFS search for partial matches
         for child in self.children.values():
@@ -142,8 +152,9 @@ class IFClient:
         self.sock = socket(AF_INET, SOCK_STREAM)
         self.sock.connect((self.ip, self.port))
         self.manifest = build_tree(self.send_command(-1, 4))
+        # self.manifest = self.send_command(-1, 4)
         with open("logs/manifest.txt", "w") as f:
-            f.write(self.manifest)
+            f.write(self.send_command(-1, 4))
 
     @reconnect
     @time_method
@@ -165,12 +176,14 @@ class IFClient:
                         raise ValueError(f"Command not found: {args}")
                     elif finded.value is not None:
                         command, Type = finded.value
+                    # command, Type = self.findfirst(*args)
             case _:
                 finded = self.manifest.search(args)
                 if finded is None:
                     raise ValueError(f"Command not found: {args}")
                 elif finded.value is not None:
                     command, Type = finded.value
+                # command, Type = self.findfirst(*args)
 
         if not write:
             self.sock.send(pack("<i?", command, write))
@@ -185,36 +198,36 @@ class IFClient:
             byte_coomand = self.__class__.write_converter.get(Type)(command, write, data)
             return self.sock.sendall(byte_coomand)
 
-    # def findfirst(self, *args: tuple[str]) -> tuple[int, int]:
-    #     args: list[str] = list(args)
-    #     if "$" in args:
-    #         args.remove("$")
-    #         pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b$"
-    #     else:
-    #         pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b.*"
-    #     pattern = compile(pattern, MULTILINE)
-    #     tmp: Match[str] = pattern.search(self.manifest)
-    #     if tmp is None:
-    #         raise ValueError(f"Command not found: {args}")
-    #     tmp = tmp.group().split(",")[:-1]
-    #     try:
-    #         tmp = map(int, tmp)
-    #     except ValueError:
-    #         tmp = (tmp[0], 4)            
+    def findfirst(self, *args: tuple[str]) -> tuple[int, int]:
+        args: list[str] = list(args)
+        if "$" in args:
+            args.remove("$")
+            pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b$"
+        else:
+            pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b.*"
+        pattern = compile(pattern, MULTILINE)
+        tmp: Match[str] = pattern.search(self.manifest)
+        if tmp is None:
+            raise ValueError(f"Command not found: {args}")
+        tmp = tmp.group().split(",")[:-1]
+        try:
+            tmp = map(int, tmp)
+        except ValueError:
+            tmp = (tmp[0], 4)            
 
-    #     return tuple(tmp)
+        return tuple(tmp)
 
-    # def findall(self, *args: list[str]) -> Generator[tuple[int, int], None, None]:
-    #     args: list[str] = list(args)
+    def findall(self, *args: list[str]) -> Generator[tuple[int, int], None, None]:
+        args: list[str] = list(args)
 
-    #     if "$" in args:
-    #         args.remove("$")
-    #         pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b$"
-    #     else:
-    #         pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b.*"
-    #     pattern = compile(pattern, MULTILINE)
-    #     tmp = pattern.findall(self.manifest)
-    #     return map(lambda x: tuple(map(int, x.split(",")[:-1])), tmp)
+        if "$" in args:
+            args.remove("$")
+            pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b$"
+        else:
+            pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b.*"
+        pattern = compile(pattern, MULTILINE)
+        tmp = pattern.findall(self.manifest)
+        return map(lambda x: tuple(map(int, x.split(",")[:-1])), tmp)
 
     def __del__(self):
         self.sock.close()

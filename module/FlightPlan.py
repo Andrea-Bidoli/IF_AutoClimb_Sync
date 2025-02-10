@@ -1,6 +1,7 @@
-from numpy import arccos, arctan2, cos, degrees, radians, sin, cross, array, pi
-from .convertion import m2ft, ft2m, decimal_to_dms
+from numpy import arccos, arctan2, cos, arcsin, sin, cross, array, pi
+from .convertion import decimal_to_dms
 from .logger import logger
+from . import unit, Quantity
 from dataclasses import dataclass, field
 from itertools import pairwise
 from collections.abc import Generator
@@ -8,7 +9,7 @@ from json import loads, load, dump
 from numpy.linalg import norm
 from io import TextIOWrapper
 from re import findall
-
+from math import isclose
 from enum import Enum, auto
 
 from typing import TYPE_CHECKING
@@ -26,35 +27,33 @@ class FlightPhase(Enum):
 @dataclass(slots=True)
 class Fix:
     name: str
-    alt: int
-    lat: float
-    lon: float
+    alt: Quantity
+    lat: Quantity
+    lon: Quantity
     _index: int
-    dist_to_next: float = field(init=False, default=0)
+    dist_to_next: Quantity = field(init=False, default=0)
     _flight_phase: int = field(init=False, default=FlightPhase.NULL)
 
     def __post_init__(self):
-        self.lat = radians(self.lat)
-        self.lon = radians(self.lon)
+        self.lat = (self.lat * unit.deg).to(unit.rad)
+        self.lon = (self.lon * unit.deg).to(unit.rad)
+        self.alt = (self.alt * unit.ft).to(unit.m)
+        self.dist_to_next *= unit.m
 
     def __str__(self):
-        return  f"name={self.name} alt={m2ft(self.alt)}\n"+\
-                f"lat={decimal_to_dms(degrees(self.lat))} lon={decimal_to_dms(degrees(self.lon))}\n"+\
+        return  f"name={self.name} alt={(self.alt.to(unit.ft))}\n"+\
+                f"lat={decimal_to_dms(self.lat.to(unit.deg).magnitude)} lon={decimal_to_dms(self.lon.to(unit.deg).magnitude)}\n"+\
                 f"index={self._index} dist={self.dist_to_next}\n"+\
                 f"flight phase={self.flight_phase}"
 
     def __format__(self, format_spec: str) -> str:
         def matching(i: tuple[str, str]):
             if i[-1]:
-                attr = (
-                    getattr(self, i[0].replace(i[-1], ""))
-                    if i[0] != "angle"
-                    else degrees(getattr(self, i[0]))
-                )
+                attr = getattr(self, i[0].replace(i[-1], ""))
                 if attr is None:
                     return f"{attr}"
                 return f"{attr:{i[-1]}}"
-            return f"{getattr(self, i[0]) if i[0] != 'angle' else degrees(getattr(self, i[0]))}"
+            return f"{getattr(self, i[0])}"
 
         list_of_format = findall(r"%([a-zA-Z]+(\.[a-zA-Z0-9]+)?)", format_spec)
 
@@ -96,7 +95,7 @@ class IFFPL(list[Fix]):
                 self.set_list(obj["children"])
                 continue
             name = obj["identifier"] if obj["name"] == None else obj["name"]
-            alt = ft2m(obj["location"]["AltitudeLight"]) if obj["location"]["AltitudeLight"] != 0 else ft2m(obj["altitude"])
+            alt = obj["location"]["AltitudeLight"] if obj["location"]["AltitudeLight"] != 0 else obj["altitude"]
             self.append(
                 Fix(
                     name,
@@ -120,16 +119,7 @@ class IFFPL(list[Fix]):
         else:
             self.json_data = loads(json_data) if isinstance(json_data, (str, bytes, bytearray)) else json_data
         self._index = 0
-        
-        def filter_func(x):
-            if x["name"] is None:
-                return False
-            return x["name"].lower() == "toc"
-        
-        if next(filter(filter_func, 
-                       self.json_data["detailedInfo"]["flightPlanItems"]), None) is None:
-            self.good_fpl = False
-        
+
         if write:
             with open("logs/fpl.json", "w") as f:
                 dump(self.json_data, f, indent=4)
@@ -138,6 +128,9 @@ class IFFPL(list[Fix]):
             if key == "flightPlanItems":
                 self.set_list(self.json_data["detailedInfo"]["flightPlanItems"])
         
+        if next(filter(lambda x: x.name.lower() == "toc", self)) is None:
+            self.good_fpl = False
+
         self.__post_init__()
     
     def __post_init__(self):
@@ -160,15 +153,15 @@ class IFFPL(list[Fix]):
 
         else:
             copy = [fix for fix in self if fix.alt > 0]
-            # TODO: check if this is the best way to do this
+            # TODO: check if it works properly
             copy = sorted(copy, key=lambda x: (x.alt, x.index), reverse=True)
             tmp: set[Fix] = set()
             tmp.add(copy[0])
-            for fix1, fix2 in pairwise(copy[::-1]):
-                if abs(fix1.alt - fix2.alt) <= ft2m(2000):
+            for fix1, fix2 in pairwise(copy):
+                if fix_2.alt - fix_1.alt <= 2000*unit.ft:
+                # if isclose(fix1.alt - fix2.alt, 2000*unit.ft, abs_tol=1e-9, rel_tol=1e-9):
                     tmp.add(fix1)
                     tmp.add(fix2)
-
                 else: break
 
             tmp_list = list(tmp)
@@ -180,8 +173,7 @@ class IFFPL(list[Fix]):
             else:
                 tmp_list.sort(key=lambda x: x.index)
                 cruise_start = tmp_list[0].index
-                cruise_finish = max(self[tmp_list[-1].index:], key=lambda x: x.alt).index
-
+                cruise_finish = max(self[tmp_list[-1].index+1:], key=lambda x: x.alt).index
 
             for fix in self:
                 if fix.index < cruise_start:
@@ -244,7 +236,17 @@ def get_bearing(fix1: Fix, fix2: Fix) -> float:
     Y = cos(fix1.lat) * sin(fix2.lat) - sin(fix1.lat) * cos(fix2.lat) * cos(delta_lon)
     return arctan2(X, Y)
 
-
+def get_point(start_fix: Fix, dist: Quantity, bearing: Quantity) -> Fix:
+    d_D = dist.to(unit.m)/6371e3
+    cos_bearing = cos(bearing.to(unit.rad))
+    sin_bearing = sin(bearing.to(unit.rad))
+    cos_d_D = cos(d_D)
+    sin_d_D = sin(d_D)
+    
+    lat_2 = arcsin(sin(start_fix.lat) * cos_d_D + cos(start_fix.lat) * sin_d_D * cos_bearing)
+    lon_2 = start_fix.lon + arctan2(sin_bearing * sin_d_D * cos(start_fix.lat), cos_d_D - sin(start_fix.lat) * sin(lat_2))
+    return Fix("Point", -1*unit.ft, lat_2*unit.rad, lon_2*unit.rad, -1)
+    
 def cosine_law(fix1: Fix, fix2: Fix) -> float:
     phi_1 = fix1.lat
     phi_2 = fix2.lat

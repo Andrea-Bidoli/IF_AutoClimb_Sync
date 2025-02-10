@@ -1,8 +1,35 @@
 from numpy import sqrt
+from pint import UnitRegistry, Quantity
 
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from .aircraft import Aircraft
+class PintUnitManager:
+    _instance = None
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(PintUnitManager, cls).__new__(cls)
+            cls.__init_unit__(cls._instance)
+        return cls._instance
+
+    def __init_unit__(self):
+        self.ureg: UnitRegistry = UnitRegistry()
+        self.ureg.define("meter_per_minute = meter / minute = m/min")
+
+        # Define common units for easier access
+        self.unit = self.ureg
+        self.ms = self.ureg.meter / self.ureg.second
+        self.knot = self.ureg.knot
+        self.km = self.ureg.kilometer
+        self.m = self.ureg.meter
+        self.ft = self.ureg.foot
+        self.nm = self.ureg.nautical_mile
+        self.mph = self.ureg.mile / self.ureg.hour
+        self.kph = self.ureg.kilometer / self.ureg.hour
+        self.fpm = self.ureg.foot / self.ureg.minute
+        self.mpm = self.ureg("m/min")
+        self.mach = self.ureg.dimensionless
+        self.rad = self.ureg.radian
+        self.deg = self.ureg.degree
+        self.rpm = self.ureg.rpm
+        self.percent = self.ureg.percent
 
 def mach2tas_SI(mach: float, alt: float) -> float:
     T0 = 288.15
@@ -51,31 +78,6 @@ def density(z: float) -> float:
 
     T = T0 - L * z
     return rho_0 * (T / T0) ** (g / (R * L) - 1)
-
-
-def knot2ms(knot: float) -> float:
-    return knot / 1.944
-
-
-def ms2knot(ms: float) -> float:
-    return int(ms * 1.944)
-
-
-def ft2m(ft: float) -> float:
-    return ft * 0.3048
-
-
-def m2ft(m: float) -> float:
-    return m / 0.3048
-
-
-def ms2fpm(ms: float) -> float:
-    return ms * 196.85
-
-
-def fpm2ms(fpm: float) -> float:
-    return fpm / 196.85
-
 
 def decimal_to_dms(decimal: float) -> str:
     degrees = int(decimal)

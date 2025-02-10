@@ -2,11 +2,11 @@ from .database import Airplane, retrive_airplane
 from numpy import radians, arcsin, sign
 from .logger import debug_logger
 from .client import IFClient
-from .FlightPlan import Fix, FlightPhase
+from .FlightPlan import Fix, FlightPhase, IFFPL
 from .utils import id_2_icao
-from .convertion import knot2ms, ft2m
+from . import unit, Quantity
 from math import isclose
-from enum import Enum
+
 
 class Aircraft(IFClient):
     def __init__(self, ip: str, port: int) -> None:
@@ -26,85 +26,88 @@ class Aircraft(IFClient):
 
     ## Aircrafs status
     @property
-    def msl(self) -> float:
-        return self.send_command("altitude_msl") * 0.3048
+    def msl(self) -> Quantity:
+        ft = self.send_command("altitude_msl") * unit.ft
+        return ft.to(unit.m)
 
     @property
-    def agl(self) -> float:
-        return self.send_command("altitude_agl") * 0.3048
+    def agl(self) -> Quantity:
+        ft = self.send_command("altitude_agl") * unit.ft
+        return ft.to(unit.m)
 
     @property
-    def tas(self) -> float:
-        return self.send_command("true_airspeed")
+    def tas(self) -> Quantity:
+        return self.send_command("true_airspeed")*unit.ms
 
     @property
-    def ias(self) -> float:
-        return self.send_command("indicated_airspeed")
+    def ias(self) -> Quantity:
+        return self.send_command("indicated_airspeed")*unit.ms
 
     @property
-    def gs(self) -> float:
-        return self.send_command("groundspeed")
+    def gs(self) -> Quantity:
+        return self.send_command("groundspeed")*unit.ms
 
     @property
-    def mach(self) -> float:
-        return self.send_command("mach_speed")
+    def mach(self) -> Quantity:
+        return self.send_command("mach_speed")*unit.mach
 
     @property
-    def hdg(self) -> float:
-        return self.send_command("heading_magnetic")
+    def hdg(self) -> Quantity:
+        return self.send_command("heading_magnetic")*unit.rad
 
     @property
-    def vs(self) -> float:
-        return self.send_command("vertical_speed")
+    def vs(self) -> Quantity:
+        return self.send_command("vertical_speed") * unit.mpm
 
     @property
-    def n1(self) -> float:
+    def n1(self) -> Quantity:
         """return the N1 value of the engine if available, otherwise return the RPM value
 
         Returns:
-            float: N1 or RPM value
+            Quantity: N1 or RPM value
         """
         try:
-            return round(self.send_command("0", "n1"), 2)
+            return round(self.send_command("0", "n1"), 2)*unit.percent
         except ValueError:
-            return round(self.send_command("0", "rpm"), 2)
+            return round(self.send_command("0", "rpm"), 2)*unit.rpm
     @property
-    def n1_target(self) -> float:
+    def n1_target(self) -> Quantity:
         try:
-            return round(self.send_command("0", "n1_target"), 2)
+            return round(self.send_command("0", "n1_target"), 2)*unit.percent
         except ValueError:
-            return -1
+            return -1*unit.dimensionless
     @property
-    def thrust(self) -> float:
-        return round(self.send_command("0", "thrust_percentage"), 2)
+    def thrust(self) -> Quantity:
+        return round(self.send_command("0", "thrust_percentage"), 2)*unit.percent
 
     @property
-    def thrust_target(self) -> float:
-        return round(self.send_command("0", "target_thrust_percentage"), 2)
+    def thrust_target(self) -> Quantity:
+        return round(self.send_command("0", "target_thrust_percentage"), 2)*unit.percent
 
     @property
-    def pitch(self) -> float:
-        return self.send_command("pitch")
+    def pitch(self) -> Quantity:
+        return self.send_command("pitch")*unit.rad
 
     @property
     def next_index(self) -> int:
         return self.send_command("flightplan", "next_waypoint_index")
 
     @property
-    def dist_to_next(self) -> float:
-        return self.send_command("flightplan", "next_waypoint_dist") * 1852
+    def dist_to_next(self) -> Quantity:
+        Nm = self.send_command("flightplan", "next_waypoint_dist") * unit.nm
+        return Nm.to(unit.m)
 
     @property
-    def accel(self) -> float:
-        return self.send_command("acceleration", "z")
+    def accel(self) -> Quantity:
+        return self.send_command("acceleration", "z")*unit.ms/unit.s
 
     @property
-    def spd_change(self) -> float:
-        return self.send_command("airspeed_change_rate")
+    def spd_change(self) -> Quantity:
+        return self.send_command("airspeed_change_rate")*unit.knot/unit.s
 
     @property
-    def OAT(self) -> float:
-        return self.send_command("oat")
+    def OAT(self) -> Quantity:
+        return self.send_command("oat")*unit.celsius
 
     @property
     def is_on_runway(self) -> bool:
@@ -151,7 +154,7 @@ class Aircraft(IFClient):
 
     @property
     def landing_lights_status(self) -> None:
-        return self.send_command("landing_lights_switch/state")
+        return self.send_command("landing_lights_controller/state")
     
     @property
     def seat_belt_status(self) -> bool:
@@ -174,35 +177,36 @@ class Aircraft(IFClient):
         self.send_command("flaps", "state", write=True, data=value)
 
     @property
-    def α(self) -> float:
-        return self.pitch - arcsin(self.vs / self.tas)
+    def α(self) -> Quantity:
+        return (self.pitch.magnitude - arcsin(self.vs.magnitude / self.tas.magnitude))*unit.rad
 
     @property
-    def γ(self) -> float:
+    def γ(self) -> Quantity:
         crosswind = self.send_command("crosswind_component")
         return arcsin(crosswind / self.tas)
 
     @property
-    def track(self) -> float:
-        return self.send_command("0/course")
+    def track(self) -> Quantity:
+        return self.send_command("0/course")*unit.rad
 
 
 class Autopilot(IFClient):
     def __init__(self, ip: str, port: int) -> None:
         super().__init__(ip, port)
-        self.bank_angle = radians(30)
+        self.bank_angle = 30*unit.deg
 
     @property
-    def Alt(self) -> float:
-        return self.send_command("alt", "target")
+    def Alt(self) -> Quantity:
+        return self.send_command("alt", "target")*unit.m
 
     @property
-    def Vs(self) -> float:
-        return self.send_command("vs", "target") / 60
+    def Vs(self) -> Quantity:
+        vs = self.send_command("vs", "target") * unit.mpm
+        return vs.to(unit.fpm)
 
     @property
-    def Spd(self) -> float:
-        spd = self.send_command("spd", "target")
+    def Spd(self) -> Quantity:
+        spd = self.send_command("spd", "target")*unit.ms
         return spd
 
     @property
@@ -226,12 +230,12 @@ class Autopilot(IFClient):
         return self.send_command("spd", "on")
 
     @property
-    def Hdg(self) -> float:
-        return self.send_command("hdg", "target")
+    def Hdg(self) -> Quantity:
+        return self.send_command("hdg", "target")*unit.rad
 
     @property
     def Bank(self) -> int:
-        return self.send_command("bank", "target")
+        return self.send_command("bank", "target")*unit.rad
 
     @property
     def BankOn(self) -> bool:
@@ -242,35 +246,24 @@ class Autopilot(IFClient):
         return self.send_command("autopilot", "on")
 
     @property
-    def Throttle(self) -> float:
-        value = self.send_command("simulator", "throttle")
-        return round((1000 - value) / 2000, 2)
-
-    @property
     def vnavOn(self):
         return self.send_command("vnav/on")
 
     @Alt.setter
-    def Alt(self, value: float) -> None:
-        self.send_command("alt", "target", write=True, data=value)
+    def Alt(self, value: Quantity) -> None:
+        self.send_command("alt", "target", write=True, data=value.to(unit.m).magnitude)
 
     @Vs.setter
-    def Vs(self, value: float) -> None:
-        self.send_command("vs", "target", write=True, data=value * 60)
+    def Vs(self, value: Quantity) -> None:
+        self.send_command("vs", "target", write=True, data=value.to(unit.mpm).magnitude)
 
     @Spd.setter
-    def Spd(self, value: float) -> None:
-        self.send_command("spd", "target", write=True, data=value)
+    def Spd(self, value: Quantity) -> None:
+        self.send_command("spd", "target", write=True, data=value.to(unit.ms).magnitude)
 
     @Hdg.setter
-    def Hdg(self, value: float) -> None:
-        self.send_command("hdg", "target", write=True, data=value)
-
-    @Throttle.setter
-    def Throttle(self, value: float) -> None:
-        value = max(0, min(1, value))
-        value = int(value * -2000 + 1000)
-        self.send_command("simulator", "throttle", write=True, data=value)
+    def Hdg(self, value: Quantity) -> None:
+        self.send_command("hdg", "target", write=True, data=value.to(unit.rad).magnitude)
 
     @SpdOn.setter
     def SpdOn(self, value: bool) -> None:
@@ -291,113 +284,96 @@ class Autopilot(IFClient):
     @BankOn.setter
     def BankOn(self, value: bool) -> None:
         self.send_command("bank", "on", write=True, data=value)
+    
+    @Bank.setter
+    def Bank(self, value: Quantity) -> None:
+        self.send_command("bank", "target", write=True, data=value.to(unit.rad).magnitude)
 
 
 class Autothrottle:
-
+    def __init__(self, aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL) -> None:
+        self.aircraft = aircraft
+        self.autopilot = autopilot
+        self.fpl = fpl
+        self.reach_target = False
+        self.current_spd = None
+        self.current_acc = None
+        self.target_acc = 9 * unit.ms/unit.s  # ~1.1 knot/s
+        self._target_spd:Quantity = None
+    
     @property
-    def target_spd(self) -> float:
+    def Throttle(self) -> Quantity:
+        value = self.aircraft.send_command("simulator", "throttle")
+        return round((1000 - value) / 2000, 2)*unit.percent
+    
+    @Throttle.setter
+    def Throttle(self, value: Quantity) -> None:
+        value = int(value.to(unit.percent).magnitude * -2000 + 1000)
+        self.aircraft.send_command("simulator", "throttle", write=True, data=value)
+    
+    @property
+    def target_spd(self) -> Quantity:
         return self._target_spd
+    
     @target_spd.setter
-    def target_spd(self, value: float) -> None:
+    def target_spd(self, value: Quantity) -> None:
         if self.autopilot.Spd != value:
             self._target_spd = value
             self.autopilot.Spd = value
 
-    def __init__(self, aircraft: Aircraft, autopilot: Autopilot) -> None:
-        self.above_10k: bool = False
-        self.airplane: Airplane = aircraft.airplane
-        self.aircraft: Aircraft = aircraft
-        self.autopilot: Autopilot = autopilot
-        self._target_spd: float = None
-        if self.autopilot.SpdMode:
-            self.target_spd: float = self.airplane.climb_v3
-        elif self.aircraft.msl >= ft2m(10_000):
-            self.above_10k = True
-            self.target_spd: float = knot2ms(self.airplane.climb_v2)
-        else:
-            self.target_spd: float = knot2ms(self.airplane.climb_v1)
-        debug_logger.debug(f"Target speed: {self.target_spd}")
-        self.current_spd: float = None
-        self.current_acc: float = None
-        self.target_acc: float = 9 # ~ 1.1 knot/s
-        self.reach_target: bool = False
+    def set_target_speed(self, speed: Quantity) -> None:
+        self.target_spd = speed
+        self.reach_target = False
+        self.autopilot.SpdOn = False
+    
+    def __call__(self, fix: Fix) -> None:
+        if fix.flight_phase == FlightPhase.CLIMB:
+            self._change_spd_climb()
+        elif fix.flight_phase == FlightPhase.CRUISE:
+            self._change_spd_climb()
+        elif fix.flight_phase == FlightPhase.DESCENT:
+            self._change_spd_descend()
 
     def _change_spd_climb(self) -> None:
         self.current_spd = self.aircraft.mach if self.autopilot.SpdMode else self.aircraft.ias
         self.current_acc = self.aircraft.accel * -1e3
-
-        spd_tol = 0.01 if self.autopilot.SpdMode else knot2ms(3)
-
+        spd_tol = 0.01 if self.autopilot.SpdMode else (3*unit.knot).to(unit.mps).magnitude
+        
         if not isclose(self.current_spd, self.target_spd, abs_tol=spd_tol) and not self.reach_target:
-            delta_spd = self.target_spd - self.current_spd
-            self.target_acc *= sign(delta_spd)
             delta_throttle = self.calc_delta_throttle()
             debug_logger.debug(f"Delta throttle: {delta_throttle}")
             if delta_throttle != 0 and not self.autopilot.SpdOn:
-                self.autopilot.Throttle += delta_throttle
-
-        elif not self.reach_target:
+                self.Throttle += delta_throttle
+        else:
             self.reach_target = True
             self.autopilot.SpdOn = True
 
-
-    def __call__(self, fix: Fix):
-        if fix.flight_phase == FlightPhase.CLIMB:
-            self.climb_call()
-        elif fix.flight_phase == FlightPhase.DESCENT:
-            self.descend_call()
-        else:
-            return
-
-    def climb_call(self) -> None:
-        if self.airplane is not None:
-            if (self.autopilot.SpdMode and not isclose(self.target_spd, self.airplane.climb_v3, abs_tol=1e-4)):
-                self.reach_target = False
-                self.autopilot.SpdOn = False
-                self.target_spd = self.airplane.climb_v3
-            elif (self.aircraft.msl >= ft2m(10_000) and not self.above_10k):
-                self.target_spd = knot2ms(self.airplane.climb_v2)
-                self.reach_target = False
-                self.autopilot.SpdOn = False
-                self.above_10k = True
-            self._change_spd_climb()
-
-    def descend_call(self) -> None:
-        if self.airplane is not None:
-            # TODO: add this implementation
-            if self.autopilot.SpdMode:
-                self.target_spd = self.airplane.descent_v1
-            elif self.aircraft.msl <= ft2m(12_000) and self.above_10k:
-                self.target_spd = knot2ms(self.airplane.descent_v1)
-                self.above_10k = False
-            elif not self.autopilot.SpdMode:
-                self.target_spd = knot2ms(self.airplane.descent_v2)
-            ...
-    
     def _change_spd_descend(self) -> None:
-        # TODO: add this implementation
-        ...
-
-    def calc_delta_throttle(self) -> float:
+        self.current_spd = self.aircraft.mach if self.autopilot.SpdMode else self.aircraft.ias
+        self.current_acc = self.aircraft.accel * -1e3
+        spd_tol = 0.01 if self.autopilot.SpdMode else (3*unit.knot).to(unit.mps).magnitude
+        
+        if self.Throttle <= 0 and self.current_acc >= 0:
+            self.autopilot.Vs += 100  # Increase vertical speed to counter acceleration
+        
+        if not isclose(self.current_spd, self.target_spd, abs_tol=spd_tol) and not self.reach_target:
+            delta_throttle = self.calc_delta_throttle()
+            debug_logger.debug(f"Delta throttle: {delta_throttle}")
+            if delta_throttle != 0 and not self.autopilot.SpdOn:
+                self.Throttle += delta_throttle
+        else:
+            self.reach_target = True
+            self.autopilot.SpdOn = True
+    
+    def calc_delta_throttle(self) -> Quantity:
         if isclose(self.current_acc, self.target_acc, rel_tol=5e-3):
-            delta_acc = 0
-
-        else:
-            delta_acc = self.target_acc - self.current_acc
-            debug_logger.debug(f"Delta acc: {delta_acc}")
-
-        if delta_acc == isclose(delta_acc, 0, abs_tol=0.1, rel_tol=1e-4):
             return 0
+        
+        delta_spd = self.target_spd - self.current_spd
+        delta_acc = sign(delta_spd)*self.target_acc - self.current_acc
+        debug_logger.debug(f"Delta acc: {delta_acc}")
 
-        elif abs(delta_acc) > 10:
-            delta = sign(delta_acc) * 0.05
-            debug_logger.debug(f"Delta: {delta_acc}")
-            debug_logger.debug(f"delta_throttle: {delta}")
-            return delta
-
-        else:
-            delta = sign(delta_acc) * 0.01
-            debug_logger.debug(f"Delta: {delta_acc}")
-            debug_logger.debug(f"delta_throttle: {delta}")
-            return delta
+        delta = sign(delta_acc) * (0.05 if abs(delta_acc) > abs(self.target_acc*.5) else 0.01)
+        debug_logger.debug(f"Delta: {delta_acc}")
+        debug_logger.debug(f"delta_throttle: {delta}")
+        return delta

@@ -14,28 +14,6 @@ from numpy import (
 from datetime import datetime, timedelta
 from time import perf_counter_ns
 from functools import wraps
-from sys import settrace
-from pathlib import Path
-from .logger import debug_logger
-# def track_all_methods_call_time(cls:object):
-#     """create a decorator that will track the total time spent in each method of a class
-#     and store it in the class attribute 'total_call_time'
-
-#     Returns:
-#         _type_: _description_
-#     """
-#     orig_init = cls.__init__
-#     @wraps(orig_init)
-#     def new_init(self, *args, **kwargs):
-#         orig_init(self, *args, **kwargs)
-#         for attr in dir(cls):
-#             if callable(getattr(cls, attr)) and not attr.startswith("__"):
-#                 orig_func = getattr(cls, attr)
-#                 wrapped_func = time_method(orig_func)
-#                 setattr(cls, attr, wrapped_func)
-#     cls.__init__ = new_init
-#     return cls
-
 
 def time_method(method):
     @wraps(method)
