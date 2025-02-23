@@ -9,7 +9,6 @@ from json import loads, load, dump
 from numpy.linalg import norm
 from io import TextIOWrapper
 from re import findall
-from math import isclose
 from enum import Enum, auto
 
 from typing import TYPE_CHECKING
@@ -17,12 +16,16 @@ if TYPE_CHECKING:
     from .aircraft import Aircraft
 
 class FlightPhase(Enum):
+    TAKE_OFF = auto()
     CLIMB = auto()
     CRUISE = auto()
     DESCENT = auto()
     NULL = auto()
 
+# TODO: rewrite all IFFPL to accept self instances
 
+type dataType = str | dict | TextIOWrapper | list
+type jsonType = str | dict | TextIOWrapper
 
 @dataclass(slots=True)
 class Fix:
@@ -71,23 +74,59 @@ class Fix:
         return self._flight_phase
 
 class IFFPL(list[Fix]):
-    def __new__(cls, json_data: str | dict | TextIOWrapper, write: bool = False) -> "IFFPL":
-        if not isinstance(json_data, (str, bytearray, bytes, dict, TextIOWrapper)):
-            raise ValueError("json_data must be a string or a dictionary")
-        if isinstance(json_data, TextIOWrapper):
-            detailFPL = load(json_data)["detailedInfo"]
-            json_data.seek(0, 0)
-        else:
-            try:
-                detailFPL = loads(json_data)["detailedInfo"]["flightPlanItems"]
-            except TypeError:
-                detailFPL = False
+    
+    @classmethod
+    def from_str(cls, flight_plan_data: str | dict, write: bool = False) -> 'IFFPL':
+        cls._allow_creation = True
+        try:
+            if isinstance(flight_plan_data, str):
+                file_decoded = loads(flight_plan_data)
+            else:
+                detailFPL = flight_plan_data
+            detailFPL = file_decoded["detailedInfo"]["flightPlanItems"]
+        except (TypeError, KeyError):
+            detailFPL = False
         if not detailFPL:
             logger.warning("No flight plan defined")
             return None
 
-        instance = super().__new__(cls)
-        return instance
+        if write:
+            with open("logs/fpl.json", "w") as f:
+                dump(file_decoded, f, indent=4)
+
+        return cls(detailFPL)
+    
+    @classmethod
+    def from_list(cls, flight_plan_data: list, write: bool = False) -> "IFFPL":
+        cls._allow_creation = True
+        if not all(isinstance(i, Fix) for i in flight_plan_data):
+            raise ValueError("non valid data type")
+        if write:
+            logger.warning("Not able to write list to file")
+        return cls(flight_plan_data)
+
+    @classmethod
+    def from_file(cls, file: TextIOWrapper, write: bool = False) -> "IFFPL":
+        cls._allow_creation = True
+        try:
+            fpl_tmp = load(file)['detailedInfo']['flightPlanItems']
+        except (TypeError, KeyError):
+            logger.warning("No flight plan defined")
+            return None
+        if write: ...
+        return cls(fpl_tmp)
+
+    def __new__(cls, *args, **kwargs) -> "IFFPL":
+        if not hasattr(cls, "_allow_creation") or not cls._allow_creation:
+            raise TypeError("IFFPL can't be initialized directly")
+        cls._allow_creation = False
+        return super().__new__(cls)
+
+    def __init__(self, data: list[Fix | dict[str,]]) -> "IFFPL":
+        if all(isinstance(i, dict) for i in data):
+            self.json_init(data)         
+        else:
+            self.from_list(data)
 
     def set_list(self, json_list: list) -> None:
         for obj in json_list:
@@ -107,33 +146,22 @@ class IFFPL(list[Fix]):
             )
             self._index += 1
 
-    def __init__(
-        self, json_data: str | dict | TextIOWrapper | None = None, write: bool = False
-    ) -> None:
-        super().__init__()
+    def json_init(
+        self, data) -> None:
         self.good_fpl = True
         self.TOC_finded = False
         self.TOD_finded = False
-        if isinstance(json_data, TextIOWrapper):
-            self.json_data = load(json_data)
-        else:
-            self.json_data = loads(json_data) if isinstance(json_data, (str, bytes, bytearray)) else json_data
         self._index = 0
 
-        if write:
-            with open("logs/fpl.json", "w") as f:
-                dump(self.json_data, f, indent=4)
         
-        for key in self.json_data["detailedInfo"]:
-            if key == "flightPlanItems":
-                self.set_list(self.json_data["detailedInfo"]["flightPlanItems"])
-        
-        if next(filter(lambda x: x.name.lower() == "toc", self)) is None:
+        self.set_list(data)
+                
+        if next(filter(lambda x: x.name.lower() == "toc", self), None) is None:
             self.good_fpl = False
 
-        self.__post_init__()
+        self.post_init()
     
-    def __post_init__(self):
+    def post_init(self):
         if self.good_fpl:
             for fix in self:
                 if self.TOC_finded and self.TOD_finded:
@@ -158,7 +186,7 @@ class IFFPL(list[Fix]):
             tmp: set[Fix] = set()
             tmp.add(copy[0])
             for fix1, fix2 in pairwise(copy):
-                if fix_2.alt - fix_1.alt <= 2000*unit.ft:
+                if fix2.alt - fix1.alt <= 2000*unit.ft:
                 # if isclose(fix1.alt - fix2.alt, 2000*unit.ft, abs_tol=1e-9, rel_tol=1e-9):
                     tmp.add(fix1)
                     tmp.add(fix2)
@@ -186,13 +214,15 @@ class IFFPL(list[Fix]):
         for fix_1, fix_2 in pairwise(self):
             fix_1.dist_to_next = cosine_law(fix_1, fix_2)
 
-
     def vnav_wps(self, start: int = 0) -> Generator[Fix, None, None]:
         yield from filter(lambda x: x.alt > 0, self[start:])
 
-    def update_vnav_wps(self, client: 'Aircraft') -> Generator[Fix, None, None]:
-        self.__init__(client.send_command("full_info"))
-        return self.vnav_wps(client.next_index)
+    def update_vnav_wps(self, aircraft: 'Aircraft') -> Generator[Fix, None, None]:
+        self.__init__(aircraft.client.send_command("full_info"))
+        return self.vnav_wps(aircraft.next_index)
+
+    def extend_from_index(self, data: list[Fix], index: int) -> None:
+        self[index:index] = data
 
 
 def angle_between_3_fix(fix1: Fix, fix2: Fix, fix3: Fix):
@@ -247,7 +277,7 @@ def get_point(start_fix: Fix, dist: Quantity, bearing: Quantity) -> Fix:
     lon_2 = start_fix.lon + arctan2(sin_bearing * sin_d_D * cos(start_fix.lat), cos_d_D - sin(start_fix.lat) * sin(lat_2))
     return Fix("Point", -1*unit.ft, lat_2*unit.rad, lon_2*unit.rad, -1)
     
-def cosine_law(fix1: Fix, fix2: Fix) -> float:
+def cosine_law(fix1: Fix, fix2: Fix) -> Quantity:
     phi_1 = fix1.lat
     phi_2 = fix2.lat
     delta_lambda = fix2.lon - fix1.lon
@@ -255,9 +285,9 @@ def cosine_law(fix1: Fix, fix2: Fix) -> float:
     return (
         arccos(sin(phi_1) * sin(phi_2) + cos(phi_1) * cos(phi_2) * cos(delta_lambda))
         * R
-    )
+    ).m*unit.m
 
-def dist_fix_fix(fix1: Fix, fix2: Fix, fpl: IFFPL) -> float:
+def dist_fix_fix(fix1: Fix, fix2: Fix, fpl: IFFPL) -> Quantity:
     if fix1.index > fix2.index:
         fix1, fix2 = fix2, fix1
     
@@ -268,7 +298,7 @@ def dist_fix_fix(fix1: Fix, fix2: Fix, fpl: IFFPL) -> float:
     
     return sum(l)
 
-def dist_to_fix(fix: Fix, fpl: IFFPL, aircraft: 'Aircraft') -> float:
+def dist_to_fix(fix: Fix, fpl: IFFPL, aircraft: 'Aircraft') -> Quantity:
     if fix.index == aircraft.next_index:
         return aircraft.dist_to_next
     else:

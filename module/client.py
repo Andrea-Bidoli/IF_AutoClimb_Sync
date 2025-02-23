@@ -1,10 +1,8 @@
 from socket import socket, AF_INET, SOCK_STREAM
 from functools import wraps
 from socket import error as socket_error
-from re import Match, compile, escape, MULTILINE, split
 from struct import pack, unpack
-from typing import Generator, Callable
-from .utils import time_method
+from typing import Callable
 from .logger import logger, debug_logger
 
 from json import loads
@@ -36,21 +34,11 @@ class Node:
             except ValueError:
                 node.value = tuple(data)
 
-    def search(self, *path_parts, current_depth=0) -> "Node":
+    def search(self, *path_parts, current_depth=0):
         """Searches for a node, allowing partial path matching."""
         if not path_parts:
             return self
-
-        path_parts = map(lambda x: split(r"[^a-zA-Z0-9_.]", x), path_parts)
-        new_path_parts = []
         
-        for path in path_parts:
-            if isinstance(path, str):
-                new_path_parts.append(path)
-            elif isinstance(path, (list, tuple)):
-                new_path_parts.extend(path)
-        
-        path_parts = new_path_parts
         first = path_parts[0]
 
         # Exact match in current node's children
@@ -59,7 +47,7 @@ class Node:
 
         # If searching a subpath, do DFS search for partial matches
         for child in self.children.values():
-            found = child.search(path_parts, current_depth + 1)
+            found = child.search(*path_parts, current_depth=current_depth + 1)
             if found:
                 return found
 
@@ -104,19 +92,21 @@ def reconnect(func):
     def wrapper(self, *args, **kwargs):
         tries = 0
         max_tries = 10
+        last_error = None
         while tries <= max_tries:
             try:
                 return func(self, *args, **kwargs)
             except (socket_error, ConnectionError) as e:
                 debug_logger.error(f"{e}")
-                self.__init__(self.ip, self.port)
+                last_error = e
+                self.reconnect()
                 tries += 1
         debug_logger.error(f"Connection failed after {tries} consecutive tries, exiting...")
-        raise e
+        raise last_error
     return wrapper
 
 class IFClient:
-    # _instance = None
+    __instance = None
     command_sent = 0
     manifest = None
     total_call_time = 0
@@ -141,23 +131,22 @@ class IFClient:
         -1: lambda cmd, wrt, data: pack("<i?", cmd, False),
     }
     
-    # def __new__(cls):
-    #     if cls._instance is None:
-    #         cls._instance = super().__new__(cls)
-    #     return cls._instance
+    def __new__(cls, ip: str, port: int):
+        if cls.__instance is None:
+            cls.__instance = super().__new__(cls)
+        return cls.__instance
 
     def __init__(self, ip: str, port: int) -> None:
         self.port = port
         self.ip = ip
         self.sock = socket(AF_INET, SOCK_STREAM)
         self.sock.connect((self.ip, self.port))
-        self.manifest = build_tree(self.send_command(-1, 4))
-        # self.manifest = self.send_command(-1, 4)
+        man = self.send_command(-1, 4)
+        self.manifest = build_tree(man)
         with open("logs/manifest.txt", "w") as f:
-            f.write(self.send_command(-1, 4))
+            f.write(man)
 
     @reconnect
-    @time_method
     def send_command(self, *args, write: bool = False, data: return_type = None) -> return_type:
         def recv_exact(lenght: int) -> bytes:
             data = b""
@@ -165,20 +154,20 @@ class IFClient:
                 data += self.sock.recv(lenght - len(data))
             return data
 
-        IFClient.command_sent += 1
+        # IFClient.command_sent += 1
         match args:
             case (cmd, tp):
                 if isinstance(cmd, int) and isinstance(tp, int):
                     command, Type = cmd, tp
                 else:
-                    finded = self.manifest.search(args)
+                    finded = self.manifest.search(*args)
                     if finded is None:
                         raise ValueError(f"Command not found: {args}")
                     elif finded.value is not None:
                         command, Type = finded.value
                     # command, Type = self.findfirst(*args)
             case _:
-                finded = self.manifest.search(args)
+                finded = self.manifest.search(*args)
                 if finded is None:
                     raise ValueError(f"Command not found: {args}")
                 elif finded.value is not None:
@@ -198,39 +187,12 @@ class IFClient:
             byte_coomand = self.__class__.write_converter.get(Type)(command, write, data)
             return self.sock.sendall(byte_coomand)
 
-    def findfirst(self, *args: tuple[str]) -> tuple[int, int]:
-        args: list[str] = list(args)
-        if "$" in args:
-            args.remove("$")
-            pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b$"
-        else:
-            pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b.*"
-        pattern = compile(pattern, MULTILINE)
-        tmp: Match[str] = pattern.search(self.manifest)
-        if tmp is None:
-            raise ValueError(f"Command not found: {args}")
-        tmp = tmp.group().split(",")[:-1]
-        try:
-            tmp = map(int, tmp)
-        except ValueError:
-            tmp = (tmp[0], 4)            
-
-        return tuple(tmp)
-
-    def findall(self, *args: list[str]) -> Generator[tuple[int, int], None, None]:
-        args: list[str] = list(args)
-
-        if "$" in args:
-            args.remove("$")
-            pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b$"
-        else:
-            pattern = r".*\b" + r"\b.*\b".join(map(escape, args)) + r"\b.*"
-        pattern = compile(pattern, MULTILINE)
-        tmp = pattern.findall(self.manifest)
-        return map(lambda x: tuple(map(int, x.split(",")[:-1])), tmp)
+    def reconnect(self):
+        self.sock.connect((self.ip, self.port))
 
     def __del__(self):
         self.sock.close()
+
 
 
 def retrive_ip_port():

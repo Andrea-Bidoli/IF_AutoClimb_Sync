@@ -258,7 +258,7 @@ database = {
 
 
 def retrive_airplane(icao: str) -> Airplane:
-    return database.get(icao, None)
+    return database.get(icao, Airplane(None, None, None, None, None, None, None))
 
 def print_table(database):
     """

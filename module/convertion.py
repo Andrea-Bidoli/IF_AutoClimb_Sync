@@ -25,11 +25,14 @@ class PintUnitManager:
         self.kph = self.ureg.kilometer / self.ureg.hour
         self.fpm = self.ureg.foot / self.ureg.minute
         self.mpm = self.ureg("m/min")
+        self.mps2 = self.ms / self.ureg.second
         self.mach = self.ureg.dimensionless
         self.rad = self.ureg.radian
         self.deg = self.ureg.degree
         self.rpm = self.ureg.rpm
-        self.percent = self.ureg.percent
+        self.s = self.ureg.second
+        self.celsius = self.ureg.degC
+        self.no_unit = self.ureg.dimensionless
 
 def mach2tas_SI(mach: float, alt: float) -> float:
     T0 = 288.15

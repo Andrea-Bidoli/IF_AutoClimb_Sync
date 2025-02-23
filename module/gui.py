@@ -15,12 +15,32 @@ class App:
             "Flaps": "",
             "Trim": "",
         }
-        self.pages = ("PERF", "FPL", "DEP", "ARR")
-        self.dep_db = {}
-        self.arr_db = {}
-        self.fpl_db = {"fpl":fpl, "page": 0}
-        self.aircraft_db = aircraft
-        self.autopilot_db = autopilot
+        self.pages = ("PERF", "FPL", "DEP", "ARR", "HLD")
+        
+        if aircraft is None or aircraft.airplane is None:
+            self.dep_db = {
+                "CLB1": 0,
+                "CLB2": 0,
+                "CLB3": 0,
+            }
+            self.arr_db = {"DSC1": 0, "DSC2": 0, "DSC3": 0}
+
+        else:
+            self.dep_db = { 
+                "CLB1": aircraft.airplane.climb_v1,
+                "CLB2": aircraft.airplane.climb_v2,
+                "CLB3": aircraft.airplane.climb_v3,
+            }
+            self.arr_db = {
+                "DSC1": aircraft.airplane.descent_v1,
+                "DSC2": aircraft.airplane.descent_v2,
+                "DSC3": aircraft.airplane.descent_v3,
+            }
+
+        self.fpl_db = {"fpl":fpl, "page":0}
+        self.hld_db = {"FIX": "", "LEN": 30, "WDTH": 15} #LEN and WDTH are in NM
+        self.aircraft = aircraft
+        self.autopilot = autopilot
         self.input_str = ""
 
         curses.wrapper(self.setup_screen)
@@ -42,14 +62,22 @@ class App:
         height, width  = self.FMC_win.getmaxyx()
         self.FMC_win.addstr(0, width//2 - 4, "Dep Page")
 
+        for i, (key, value) in enumerate(self.dep_db.items(), start=0):
+            cursor = ">" if i == self.selected_UpDown else " "
+            self.FMC_win.addstr(i+1, 0, f"{cursor}{key}: {value}")
+
         self.FMC_win.addnstr(height-1, 0, "Input: " + self.input_str, width)
         self.FMC_win.refresh()
-        
+
     def arr_page(self):
         self.selected_UpDown %= len(self.db)
         self.FMC_win.clear()
         height, width  = self.FMC_win.getmaxyx()
         self.FMC_win.addstr(0, width//2 - 4, "Arr Page")
+
+        for i, (key, value) in enumerate(self.arr_db.items(), start=0):
+            cursor = ">" if i == self.selected_UpDown else " "
+            self.FMC_win.addstr(i+1, 0, f"{cursor}{key}: {value}")
 
         self.FMC_win.addnstr(height-1, 0, "Input: " + self.input_str, width)
         self.FMC_win.refresh()
@@ -58,47 +86,61 @@ class App:
         self.FMC_win.clear()
         height, width = self.FMC_win.getmaxyx()
 
+        # Display page title
+        self.FMC_win.addstr(0, width // 2 - 5, "FPL Page")
+
         # Define pagination
-        page = self.fpl_db["page"]
-        fpl: IFFPL = self.fpl_db["fpl"]
+        fpl: IFFPL = self.fpl_db.get("fpl")
+        if fpl is None:
+            self.FMC_win.addstr(1, 0, "No flight plan loaded")
+            self.FMC_win.refresh()
+            return
         items_per_page = height - 2  # Number of visible items
+        total_pages = (len(fpl) + items_per_page - 1) // items_per_page  # Calculate total pages
 
-        num_pages = max(1, (len(fpl) + items_per_page - 1) // items_per_page)  # Total pages
-        page = max(0, min(page, num_pages - 1))  # Keep page in bounds
+        # Ensure cursor stays within bounds
+        if self.selected_UpDown < 0:
+            if self.fpl_db["page"] > 0:
+                self.fpl_db["page"] -= 1
+                self.selected_UpDown = items_per_page - 1
+            else:
+                self.selected_UpDown = 0  # Stay at the top
 
-        start_index = page * items_per_page
+        elif self.selected_UpDown >= items_per_page:
+            if self.fpl_db["page"] < total_pages - 1:
+                self.fpl_db["page"] += 1
+                self.selected_UpDown = 0
+            else:
+                self.selected_UpDown = min(len(fpl) - self.fpl_db["page"] * items_per_page - 1, items_per_page - 1)
+
+        # Get start and end index for the current page
+        start_index = self.fpl_db["page"] * items_per_page
         end_index = min(start_index + items_per_page, len(fpl))
 
-        self.selected_UpDown %= (end_index - start_index)  # Limit selection within current page
+        
 
-        self.FMC_win.addstr(0, width // 2 - 5, f"FPL Page {page + 1}/{num_pages}")
-
-        for i, fix in enumerate(fpl[start_index:end_index]):
+        # Display flight plan entries
+        for i, fix in enumerate(fpl[start_index:end_index], start=0):
             cursor = ">" if i == self.selected_UpDown else " "
-            self.FMC_win.addstr(i + 1, 0, f"{cursor}{fix.name}")
+            self.FMC_win.addstr(i + 1, 0, f"{cursor} {fix.name}")
+
+        # Input field at the bottom
+        self.FMC_win.addnstr(height - 1, 0, "Input: " + self.input_str, width)
 
         self.FMC_win.refresh()
 
+    def hld_page(self):
+        self.selected_UpDown %= len(self.db)
+        self.FMC_win.clear()
+        height, width  = self.FMC_win.getmaxyx()
+        self.FMC_win.addstr(0, width//2 - 4, "Hld Page")
 
-    # def fpl_page(self):
-    #     self.FMC_win.clear()
-    #     height, width  = self.FMC_win.getmaxyx()
-    #     self.selected_UpDown %= height-2
-
-    #     page = self.fpl_db["page"]
-    #     fpl: IFFPL = self.fpl_db["fpl"]
-    #     start_index = page*(height-2)
-    #     end_index = start_index + height-2
-    #     self.FMC_win.addstr(0, width//2 - 5, "FPL Page")
-    #     self.FMC_win.addnstr(height-1, 0, "Input: " + self.input_str, width)
-    #     self.win2.clear()
-    #     self.win2.addstr(0, 0, f"UpDown: {self.selected_UpDown} : height-2 : {self.height-2}")
-    #     for i, fix in enumerate(fpl[start_index:end_index], start=0):
-    #         cursor = ">" if i == self.selected_UpDown else " "
-    #         self.FMC_win.addstr(i+1, 0, f"{cursor}{fix.name}")
+        for i, (key, value) in enumerate(self.hld_db.items(), start=0):
+            cursor = ">" if i == self.selected_UpDown else " "
+            self.FMC_win.addstr(i+1, 0, f"{cursor}{key}: {value}")
         
-    #     self.FMC_win.refresh()
-        
+        self.FMC_win.addnstr(height-1, 0, "Input: " + self.input_str, width)
+        self.FMC_win.refresh()
         
         
     def setup_screen(self, stdscr: curses.window):
@@ -153,6 +195,8 @@ class App:
                 case curses.KEY_DOWN: # Down arrow
                     # TODO: Fix that when selected_UpDown is 0, it should go to the prev page
                     # problem could be when using len(db["fpl"]) instead of len(height-2)
+                    if self.selected_RightLeft == 1:
+                        ...
                     self.selected_UpDown += 1
 
                 case curses.KEY_UP: # Up arrow

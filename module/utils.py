@@ -1,16 +1,3 @@
-from numpy import (
-    int8,
-    int16,
-    int32,
-    int64,
-    float16,
-    float32,
-    float64,
-    iinfo,
-    finfo,
-    log10,
-    sign,
-)
 from datetime import datetime, timedelta
 from time import perf_counter_ns
 from functools import wraps
@@ -32,54 +19,8 @@ def time_method(method):
 
     return wrapper
 
-
 def format_time(seconds: float) -> str:
     return f"{datetime.min + timedelta(seconds=abs(seconds)):%H:%M:%S}"
-
-
-def efficient_number(num):
-    # Check if the number is an integer
-    if isinstance(num, str):
-        num = num.strip()
-        num = int(num) if num.isdigit() else float(num)
-    if isinstance(num, int):
-        # Convert to the most efficient integer type based on the value range
-        if iinfo(int8).min <= num <= iinfo(int8).max:
-            return int8(num)
-        elif iinfo(int16).min <= num <= iinfo(int16).max:
-            return int16(num)
-        elif iinfo(int32).min <= num <= iinfo(int32).max:
-            return int32(num)
-        else:
-            return int64(num)
-    # Check if the number is a float
-    elif isinstance(num, float):
-        # Convert to the most efficient float type based on the precision needed
-        if finfo(float16).min <= num <= finfo(float16).max:
-            return float16(num)
-        elif finfo(float32).min <= num <= finfo(float32).max:
-            return float32(num)
-        else:
-            return float64(num)
-
-    # Return the original number if it's not int or float
-    return num
-
-
-def calc_throttle(throttle: float) -> int:
-    throttle = max(0, min(1, throttle))
-    return int(throttle * 2000 - 1000)
-
-
-def get_tollerance(num: float) -> int:
-    try:
-        magnitude = int(log10(abs(num)))
-    except ValueError: return 10**0
-    if magnitude > 0:
-        return 10**0
-    else:
-        return 10**(magnitude - 1)
-
 
 id_2_icao = {
     "Airbus A220-300": "BCS3",
