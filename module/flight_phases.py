@@ -1,27 +1,11 @@
-from . import (
-    IFFPL,
-    Fix,
-    dist_to_fix,
-    FlightPhase,
-    cosine_law,
-    
-    Aircraft,
-    Autopilot,
-    Autothrottle,
-    Spd,
-    
-    logger,
-    debug_logger,
-    
-    format_time,
-    
-    unit,
-    Quantity,
-)
+from .FlightPlan import IFFPL, Fix, dist_to_fix, FlightPhase, cosine_law
+from .aircraft import Aircraft, Autopilot, Autothrottle, Spd
+from .logger import logger, debug_logger
+from .utils import format_time
 
-from numpy import arctan2, sin, sign, radians
-from numpy import cos, arccos, sqrt, arcsin
-# from datetime import datetime, timedelta
+from . import unit, Quantity
+from numpy import arctan2, sin, sign, radians, cos, arcsin
+from datetime import datetime, timedelta
 from time import sleep
 from math import isclose
 
@@ -94,29 +78,6 @@ class Vnav:
         self.vnav_wps = fpl.vnav_wps()
         self.waypoint = next(self.vnav_wps, dummy_fix)
         self.autothrottle = autothrottle
-        # setting Take Off parameters
-        passed = False
-        if self.autothrottle.flight_phase == FlightPhase.TAKE_OFF:
-            self.TO_setting = 0.9
-            if (Vr := self.autothrottle.inputs.get("Vr", "")):
-                self.autopilot.Spd = Vr*unit.knot
-            match self.autothrottle.inputs.get("FLEX", "").split('-'):
-                case (dto, temp):
-                    dto = int(dto)
-                    temp = int(temp)
-                case (temp,):
-                    dto = 0
-                    temp = int(temp)
-                case _: passed = True
-            if not passed:
-                try:
-                    k = self.aircraft.airplane.k
-                    if temp >= self.aircraft.OAT:
-                        self.TO_setting = ((100-dto*10) - k * (temp - self.aircraft.OAT)) / 100
-                    elif temp <= 2:
-                        self.TO_setting = (100 - temp * 10) / 100
-                except (AttributeError, TypeError): ...
-            logger.info(f"Take Off setting: {self.TO_setting:02f}")
         
         logger.info("VNAV initialized!")
 
@@ -128,13 +89,16 @@ class Vnav:
             spd = target_speed.to(unit.knot)
         else:
             spd = target_speed.to(unit.mach)
-        if self.autopilot.Spd.to(unit.knot) != target_speed:
-            logger.info(f"Speed set to {spd: 5.2f} knots/mach")
+        # FIXME: check if the speed is already set to the target speed and check compatibility with unit
+        if spd.units != unit.mach and (self.autopilot.Spd.m_as(unit.knot) != target_speed.m_as(unit.knot)):
+            logger.info(f"Speed set to {spd: 5.2f}")
+        else:
+            logger.info(f"Mach set to {spd.m: .2f}")
 
     def __call__(self) -> None:
         if self.aircraft.next_index > self.waypoint.index:
             self.waypoint = next(self.vnav_wps, dummy_fix)
-            return
+            return False
         if not self.aircraft.is_on_ground:
             self.autothrottle.flight_phase = self.waypoint.flight_phase
         match self.autothrottle.flight_phase:
@@ -147,29 +111,16 @@ class Vnav:
             case FlightPhase.CRUISE:
                 self.handle_cruise()
             case FlightPhase.DESCENT:
-                return
+                return True
                 self.handle_descent(self.waypoint, self.descent_angle)
             case FlightPhase.NULL:
-                return
+                return True
+            case _:
+                logger.error("Invalid flight phase")
+                raise ValueError("Invalid flight phase")
 
     def handle_takeoff(self):
-        if self.aircraft.is_on_ground or (self.aircraft.n1 < 0.5*unit.no_unit or (not self.aircraft.is_on_runway and self.aircraft.is_on_ground)):
-            sleep(1)
-            return
-        self.autothrottle.Throttle = self.TO_setting
-        logger.info(f"Starting takeoff\nTO n1:{self.aircraft.n1_target:.2f}")
-        if self.aircraft.is_on_ground or (self.aircraft.agl < 50*unit.ft and self.aircraft.vs < 0*unit.fpm): 
-            sleep(1)
-            return
-        debug_logger.debug("Takeoff")
-        if not self.aircraft.landing_gear_status:
-            debug_logger.debug("Landing gear is up")
-            return
-        debug_logger.debug("Landing gear is down, trying to retract")
-        self.aircraft.Landing_gear_toggle
-        self.autothrottle.flight_phase = FlightPhase.CLIMB
-        del self.TO_setting
-
+        self.autothrottle()
     def handle_climb(self, waypoint: Fix):
         msl = self.aircraft.msl
         
@@ -182,7 +133,7 @@ class Vnav:
                 self.aircraft.seat_belt_toggle
             self.set_target_speed(self.aircraft.airplane.climb_v2)
             self.above_10k = True
-        elif msl <= 10_000*unit.ft:
+        elif msl <= 10_000*unit.ft and self.autothrottle.reached_target:
             self.set_target_speed(self.aircraft.airplane.climb_v1)
 
         self.autothrottle()
@@ -204,12 +155,13 @@ class Vnav:
         if ete_fix <= 0*unit.s:
             self.autopilot.Alt = self.waypoint.alt
             self.autopilot.Vs = target_vs
-            self.vnav_wps = self.fpl.update_vnav_wps(self.aircraft)
+            self.vnav_wps = self.fpl.update_vnav_wps(self.aircraft) # not functioning right now
         elif ete_fix > 6 * 60*unit.s:
-            logger.info(f"ETA to next waypoint: {format_time(ete_fix.to(unit.s).m)}")
+            logger.info(f"ETE to {self.waypoint.name}: {format_time(ete_fix.to(unit.s).m)}, ETA: {datetime.now() + timedelta(seconds=ete_fix.m)}")
+            logger.info(f"sleeping for {format_time((ete_fix*0.5).m)}")
             sleep((ete_fix*0.5).m)
         else:
-            logger.info(f"ETA to next waypoint: {format_time(ete_fix.to(unit.s).m)}")
+            logger.info(f"ETE to {self.waypoint.name}: {format_time(ete_fix.to(unit.s).m)}")
             sleep(10)
 
     def handle_descent(self, waypoint: Fix, sin_angle: float):

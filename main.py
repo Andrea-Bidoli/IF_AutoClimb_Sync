@@ -1,8 +1,7 @@
 from module.flight_phases import Vnav, Lnav, takeoff, Only_Authothrottle
-from module import IFClient, Aircraft, Autopilot, logger, debug_logger, retrive_ip_port, IFFPL
+from module import IFClient, Aircraft, Autopilot, IFFPL, logger, retrive_ip_port
 from module import Autothrottle, Spd, Quantity, unit
 from tabulate import tabulate
-from time import sleep
 
 ip, port = retrive_ip_port()
 
@@ -58,8 +57,7 @@ def main_loop() -> None:
         logger.info("\n"+tabulate(data, headers="firstrow"))
 
     if not only_AT:
-        while True:
-            vnav()
+        while vnav(): continue
     else:
         Only_Authothrottle(aircraft, autopilot)
 

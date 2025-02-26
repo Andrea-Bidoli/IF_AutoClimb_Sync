@@ -119,7 +119,6 @@ class IFFPL(list[Fix]):
     def __new__(cls, *args, **kwargs) -> "IFFPL":
         if not hasattr(cls, "_allow_creation") or not cls._allow_creation:
             raise TypeError("IFFPL can't be initialized directly")
-        cls._allow_creation = False
         return super().__new__(cls)
 
     def __init__(self, data: list[Fix | dict[str,]]) -> "IFFPL":
@@ -218,7 +217,9 @@ class IFFPL(list[Fix]):
         yield from filter(lambda x: x.alt > 0, self[start:])
 
     def update_vnav_wps(self, aircraft: 'Aircraft') -> Generator[Fix, None, None]:
-        self.__init__(aircraft.client.send_command("full_info"))
+        tmp = self.from_str(aircraft.client.send_command("full_info"), write=True)
+        self.clear()
+        self.extend(tmp)
         return self.vnav_wps(aircraft.next_index)
 
     def extend_from_index(self, data: list[Fix], index: int) -> None:

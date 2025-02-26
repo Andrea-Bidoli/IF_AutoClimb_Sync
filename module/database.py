@@ -27,10 +27,10 @@ database = {
     "B742": Airplane(
         icao="B742",
         climb_v1=250*unit.knot,
-        climb_v2=310*unit.knot,
+        climb_v2=340*unit.knot,
         climb_v3=0.84*unit.mach,
         descent_v1=0.84*unit.mach,
-        descent_v2=310*unit.knot,
+        descent_v2=340*unit.knot,
         descent_v3=250*unit.knot,
         k=0.15
     ),

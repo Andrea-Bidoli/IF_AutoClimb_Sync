@@ -70,5 +70,5 @@ class Logger(logging.Logger):
 
 # Create logger
 debug_logger = Logger("Debugger", logging.DEBUG)
-logger = Logger("Autopilot", logging.INFO)
+logger = Logger("Autopilot", logging.DEBUG)
     

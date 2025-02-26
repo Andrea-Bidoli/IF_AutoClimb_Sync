@@ -1,11 +1,12 @@
 from .database import Airplane, retrive_airplane
-from numpy import arcsin, sign, clip
-from .logger import debug_logger
+from .logger import debug_logger, logger
 from .client import IFClient
 from .FlightPlan import Fix, FlightPhase, IFFPL
 from .utils import id_2_icao
 from . import unit, Quantity
+from numpy import arcsin, sign, clip
 from math import isclose
+from time import sleep
 
 from enum import Enum, auto
 class Spd(Enum):
@@ -319,6 +320,33 @@ class Autothrottle:
         self.target_acc = 9 * unit.mps2  # ~1.1 knot/s
         self._target_spd: Quantity = None
         self.flight_phase = FlightPhase.TAKE_OFF if aircraft.is_on_ground else FlightPhase.CLIMB
+        # setting spd
+        if (Vr := self.inputs.get("Vr", "")):
+            self.autopilot.Spd = Vr
+        
+        # setting Take Off parameters
+        passed = False
+        if self.flight_phase == FlightPhase.TAKE_OFF:
+            self.TO_setting = 0.9
+            if (Vr := self.inputs.get("Vr", "")):
+                self.autopilot.Spd = Vr*unit.knot
+            match self.inputs.get("FLEX", "").split('-'):
+                case (dto, temp):
+                    dto = int(dto)
+                    temp = int(temp)
+                case (temp,) if temp.isdigit():
+                    dto = 0
+                    temp = int(temp)
+                case _: passed = True
+            if not passed:
+                try:
+                    k = self.aircraft.airplane.k
+                    if temp >= self.aircraft.OAT:
+                        self.TO_setting = ((100-dto*10) - k * (temp - self.aircraft.OAT)) / 100
+                    elif temp <= 2:
+                        self.TO_setting = (100 - temp * 10) / 100
+                except (AttributeError, TypeError): ...
+            logger.info(f"Take Off setting: {self.TO_setting:02f}")
 
     def __setattr__(self, name, value: Quantity):
         if not isinstance(value, Quantity):
@@ -362,12 +390,15 @@ class Autothrottle:
             self.autopilot.SpdOn = False
 
     def __call__(self) -> None:
-        if self.flight_phase == FlightPhase.CLIMB:
-            self._change_spd_climb()
-        elif self.flight_phase == FlightPhase.CRUISE:
-            self._change_spd_cruise()
-        elif self.flight_phase == FlightPhase.DESCENT:
-            self._change_spd_descend()
+        match self.flight_phase:
+            case FlightPhase.TAKE_OFF:
+                self._take_off()
+            case FlightPhase.CLIMB:
+                self._change_spd_climb()
+            case FlightPhase.CRUISE:
+                self._change_spd_cruise()
+            case FlightPhase.DESCENT:
+                self._change_spd_descend()
 
     def _change_spd_climb(self) -> None:
         spd_tol = 0.01 if self.autopilot.SpdMode else (3*unit.knot).to(unit.ms).m
@@ -381,7 +412,8 @@ class Autothrottle:
                 if delta_throttle != 0 and not self.autopilot.SpdOn:
                     self.Throttle += delta_throttle
             else:
-                self.reached_target = True
+                if self.reached_target:
+                    self.reached_target = True
                 if not self.autopilot.SpdOn:
                     self.autopilot.SpdOn = True
         else:
@@ -421,12 +453,13 @@ class Autothrottle:
             if not isclose(self.current_spd.m, self.target_spd.m, abs_tol=spd_tol) and not self.reached_target:
                 delta_throttle = self.calc_delta_throttle()
                 debug_logger.debug(f"Delta throttle: {delta_throttle}")
-                
+
                 if delta_throttle != 0 and not self.autopilot.SpdOn:
                     self.Throttle += delta_throttle
             else:
                 self.reached_target = True
-                self.autopilot.SpdOn = True
+                if not self.autopilot.SpdOn:
+                    self.autopilot.SpdOn = True
         else:
             self.current_spd = self.aircraft.ias
             if not isclose(self.current_spd.to(unit.ms).m, self.target_spd.to(unit.ms).m, abs_tol=spd_tol) and not self.reached_target:
@@ -436,7 +469,28 @@ class Autothrottle:
                     self.Throttle += delta_throttle
             else:
                 self.reached_target = True
-                self.autopilot.SpdOn = True
+                if not self.autopilot.SpdOn:
+                    self.autopilot.SpdOn = True
+
+    def _take_off(self) -> None:
+        if self.aircraft.is_on_ground or (self.aircraft.n1 < 0.5*unit.no_unit or (not self.aircraft.is_on_runway and self.aircraft.is_on_ground)):
+            sleep(1)
+            return
+        self.Throttle = self.TO_setting
+        logger.info(f"Starting takeoff\nTO n1:{self.aircraft.n1_target:.2f}")
+        if self.aircraft.is_on_ground or (self.aircraft.agl < 50*unit.ft and self.aircraft.vs < 0*unit.fpm): 
+            sleep(1)
+            return
+        debug_logger.debug("Takeoff")
+        if not self.aircraft.landing_gear_status:
+            debug_logger.debug("Landing gear is up")
+            return
+        debug_logger.debug("Landing gear is down, trying to retract")
+        self.aircraft.Landing_gear_toggle
+        self.flight_phase = FlightPhase.CLIMB
+        del self.TO_setting
+
+
 
     def calc_delta_throttle(self) -> Quantity:
         self.current_acc = self.aircraft.accel
