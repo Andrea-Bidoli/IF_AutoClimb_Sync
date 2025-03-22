@@ -45,7 +45,7 @@ class Logger(logging.Logger):
             style="{"
         )
         self.stream_handler.setFormatter(stream_formatter)
-        self._filter = Filter(name, False)
+        self._filter = Filter(name, debug=True)
         self.stream_handler.addFilter(self._filter)
         self.addHandler(self.stream_handler)
 
@@ -53,7 +53,6 @@ class Logger(logging.Logger):
         if not log_dir.is_dir():
             log_dir.mkdir()
         file = logging.FileHandler(f"logs/{name}.log")
-        self.file_reset()
         file_formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
@@ -65,10 +64,14 @@ class Logger(logging.Logger):
         open(f"logs/{self.name}.log", "w").close()
 
 
-
-
-
-# Create logger
+## Create logger
 debug_logger = Logger("Debugger", logging.DEBUG)
-logger = Logger("Autopilot", logging.DEBUG)
-    
+debug_logger.toggle_debug()
+debug_logger.file_reset()
+
+logger = Logger("Autopilot", logging.INFO)
+logger.file_reset()
+
+command_logger = Logger("Command", logging.INFO)
+command_logger.file_reset()
+command_logger.removeHandler(command_logger.stream_handler)

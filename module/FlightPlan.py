@@ -10,6 +10,7 @@ from numpy.linalg import norm
 from io import TextIOWrapper
 from re import findall
 from enum import Enum, auto
+import requests
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -22,10 +23,10 @@ class FlightPhase(Enum):
     DESCENT = auto()
     NULL = auto()
 
-# TODO: rewrite all IFFPL to accept self instances
+
 
 type dataType = str | dict | TextIOWrapper | list
-type jsonType = str | dict | TextIOWrapper
+type jsonType = str | dict | list | int | float | bool | None
 
 @dataclass(slots=True)
 class Fix:
@@ -36,6 +37,7 @@ class Fix:
     _index: int
     dist_to_next: Quantity = field(init=False, default=0)
     _flight_phase: int = field(init=False, default=FlightPhase.NULL)
+    _spd: Quantity = field(init=False, default=-1)
 
     def __post_init__(self):
         self.lat = (self.lat * unit.deg).to(unit.rad)
@@ -45,7 +47,8 @@ class Fix:
 
     def __str__(self):
         return  f"name={self.name} alt={(self.alt.to(unit.ft))}\n"+\
-                f"lat={decimal_to_dms(self.lat.to(unit.deg).magnitude)} lon={decimal_to_dms(self.lon.to(unit.deg).magnitude)}\n"+\
+                f"lat={decimal_to_dms(self.lat.m_as(unit.deg))} lon={decimal_to_dms(self.lon.m_as(unit.deg))}\n"+\
+                f"spd={self.spd}\n"+\
                 f"index={self._index} dist={self.dist_to_next}\n"+\
                 f"flight phase={self.flight_phase}"
 
@@ -73,17 +76,30 @@ class Fix:
     def flight_phase(self) -> int:
         return self._flight_phase
 
+    @property
+    def spd(self) -> Quantity:
+        return self._spd
+
 class IFFPL(list[Fix]):
-    
+    good_fpl: bool = True
     @classmethod
     def from_str(cls, flight_plan_data: str | dict, write: bool = False) -> 'IFFPL':
         cls._allow_creation = True
         try:
             if isinstance(flight_plan_data, str):
-                file_decoded = loads(flight_plan_data)
+                str_decoded = loads(flight_plan_data)
+                detailFPL = str_decoded["detailedInfo"]["flightPlanItems"]
+                
+                def extract_names_identifiers(data: list[dict|None]):
+                    for item in data:
+                        if item.get("children"):  # If there are children, recursively yield from them
+                            yield from extract_names_identifiers(item.get("children"))
+                        else:
+                            yield from (item.get("name"), item.get("identifier"))
+                
+                cls.good_fpl =  {"toc", "tod"}.issubset(map(str.lower, filter(None, extract_names_identifiers(detailFPL))))
             else:
                 detailFPL = flight_plan_data
-            detailFPL = file_decoded["detailedInfo"]["flightPlanItems"]
         except (TypeError, KeyError):
             detailFPL = False
         if not detailFPL:
@@ -92,24 +108,32 @@ class IFFPL(list[Fix]):
 
         if write:
             with open("logs/fpl.json", "w") as f:
-                dump(file_decoded, f, indent=4)
+                dump(str_decoded, f, indent=4)
 
         return cls(detailFPL)
     
-    @classmethod
-    def from_list(cls, flight_plan_data: list, write: bool = False) -> "IFFPL":
-        cls._allow_creation = True
-        if not all(isinstance(i, Fix) for i in flight_plan_data):
-            raise ValueError("non valid data type")
-        if write:
-            logger.warning("Not able to write list to file")
-        return cls(flight_plan_data)
+    # @classmethod
+    # def from_list(cls, flight_plan_data: list, write: bool = False) -> "IFFPL":
+    #     cls._allow_creation = True
+    #     if not all(isinstance(i, Fix) for i in flight_plan_data):
+    #         raise ValueError("non valid data type")
+    #     if write:
+    #         logger.warning("Not able to write list to file")
+    #     return cls(flight_plan_data)
 
     @classmethod
     def from_file(cls, file: TextIOWrapper, write: bool = False) -> "IFFPL":
         cls._allow_creation = True
+
         try:
-            fpl_tmp = load(file)['detailedInfo']['flightPlanItems']
+            fpl_tmp: dict[str, dict|None] = load(file).get("detailedInfo", {}).get("flightPlanItems")
+            def extract_names_identifiers(data: list[dict|None]):
+                for item in data:
+                    if item.get("children"):  # If there are children, recursively yield from them
+                        yield from extract_names_identifiers(item.get("children"))
+                    else:
+                        yield from (item.get("name"), item.get("identifier"))
+            cls.good_fpl =  {"toc", "tod"}.issubset(map(str.lower, extract_names_identifiers()))
         except (TypeError, KeyError):
             logger.warning("No flight plan defined")
             return None
@@ -123,16 +147,17 @@ class IFFPL(list[Fix]):
 
     def __init__(self, data: list[Fix | dict[str,]]) -> "IFFPL":
         if all(isinstance(i, dict) for i in data):
-            self.json_init(data)         
+            self.json_init(data)
         else:
-            self.from_list(data)
+            ...
+            # self.from_list(data)
 
-    def set_list(self, json_list: list) -> None:
+    def set_list(self, json_list: list[dict[str,]]) -> None:
         for obj in json_list:
-            if obj["children"] is not None:
-                self.set_list(obj["children"])
+            if (child := obj.get("children")) is not None:
+                self.set_list(child)
                 continue
-            name = obj["identifier"] if obj["name"] == None else obj["name"]
+            name = obj.get("identifier") or obj.get("name")
             alt = obj["location"]["AltitudeLight"] if obj["location"]["AltitudeLight"] != 0 else obj["altitude"]
             self.append(
                 Fix(
@@ -145,38 +170,47 @@ class IFFPL(list[Fix]):
             )
             self._index += 1
 
-    def json_init(
-        self, data) -> None:
-        self.good_fpl = True
-        self.TOC_finded = False
-        self.TOD_finded = False
+    def json_init(self, data) -> None:
         self._index = 0
 
-        
         self.set_list(data)
-                
-        if next(filter(lambda x: x.name.lower() == "toc", self), None) is None:
-            self.good_fpl = False
-
         self.post_init()
-    
+
     def post_init(self):
         if self.good_fpl:
-            for fix in self:
-                if self.TOC_finded and self.TOD_finded:
-                    fix._flight_phase = FlightPhase.DESCENT
+            from .Simbrief import Simbrief_FPL, request_str_usernames
+            from .Simbrief.navlog import Simbrief_Fix
+            # retrieve simbrief data
+            response = requests.get(request_str_usernames)
+            match response.status_code:
+                case 200:
+                    json_response: dict[str, jsonType] = response.json()
+                    simbrief_fpl = Simbrief_FPL(json_response)
+                case 400:
+                    logger.error("Unable to get Simbrief data")
+            # in case Simbrief FPL and the IF FPL are not compatible
 
-                elif self.TOC_finded and not self.TOD_finded:
-                    if fix.name.lower() == "tod":
-                        self.TOD_finded = True
-                        fix._flight_phase = FlightPhase.DESCENT
-                        continue
-                    fix._flight_phase = FlightPhase.CRUISE
-
-                elif not self.TOC_finded and not self.TOD_finded:
-                    fix._flight_phase = FlightPhase.CLIMB
-                    if fix.name.lower() == "toc":
-                        self.TOC_finded = True
+            if not ({simbrief_fpl.origin.name, simbrief_fpl.destination.name}.issubset(map(lambda x: x.name, self))):
+                logger.error("Simbrief data not compatible with the flight plan")
+                for fix_1, fix_2 in pairwise(self):
+                    fix_1.dist_to_next = cosine_law(fix_1, fix_2)
+                return
+            # else
+            for fix in self[1:-1]:
+                # FIXME: utilize simbrief_fpl to add information to the fix
+                smbrf_wp: Simbrief_Fix = next(filter(lambda x: x.name == fix.name or x.ident == fix.name, simbrief_fpl.navlog), None)
+                if smbrf_wp is None:
+                    logger.error(f"Unable to find {fix.name} in the Simbrief FPL")
+                    continue
+                # setting fix altitude
+                # fix.alt = smbrf_wp.alt
+                # setting fix speed
+                if round(fix.alt.m_as(unit.ft)) > 28000:
+                    fix._spd = smbrf_wp.mach
+                else:
+                    fix._spd = smbrf_wp.ias
+                fix._flight_phase = smbrf_wp.stage
+                fix.dist_to_next = smbrf_wp.distance
 
         else:
             copy = [fix for fix in self if fix.alt > 0]
@@ -210,8 +244,8 @@ class IFFPL(list[Fix]):
                 else:
                     fix._flight_phase = FlightPhase.DESCENT
 
-        for fix_1, fix_2 in pairwise(self):
-            fix_1.dist_to_next = cosine_law(fix_1, fix_2)
+            for fix_1, fix_2 in pairwise(self):
+                fix_1.dist_to_next = cosine_law(fix_1, fix_2)
 
     def vnav_wps(self, start: int = 0) -> Generator[Fix, None, None]:
         yield from filter(lambda x: x.alt > 0, self[start:])
@@ -225,6 +259,8 @@ class IFFPL(list[Fix]):
     def extend_from_index(self, data: list[Fix], index: int) -> None:
         self[index:index] = data
 
+    def next_wp(self, aircraft: 'Aircraft') -> Fix:
+        return self[aircraft.next_index]
 
 def angle_between_3_fix(fix1: Fix, fix2: Fix, fix3: Fix):
     p1 = array(

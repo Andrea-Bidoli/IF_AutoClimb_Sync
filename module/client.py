@@ -1,23 +1,23 @@
-from socket import socket, AF_INET, SOCK_STREAM
+from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM
 from functools import wraps
 from socket import error as socket_error
 from struct import pack, unpack
 from typing import Callable
-from .logger import logger, debug_logger
+from .logger import logger, debug_logger, command_logger
 
 from json import loads
-import asyncio as aio
-import asyncudp
+# import asyncio as aio
+# import asyncudp
 
 
 type return_type = int | float | str | bool | None
 
 class Node:
-    def __init__(self, name):
+    def __init__(self, name, parent=None):
         self.name: str = name
         self.children: dict[str, Node] = {}
+        self.parent: None| Node = parent
         self.value = None
-
     def insert(self, path_parts: list|tuple|str, data=None):
         """Inserts a path into the tree using a dictionary for fast lookups."""
         if isinstance(path_parts, str):
@@ -26,7 +26,7 @@ class Node:
         node = self
         for part in path_parts:
             if part not in node.children:
-                node.children[part] = Node(part)
+                node.children[part] = Node(part, parent=node)
             node = node.children[part]
         if data:
             try:
@@ -53,7 +53,16 @@ class Node:
 
         return None
 
-    def __repr__(self, level=0, prefix="") -> str:
+    def str_repr(self) -> str:
+        """Returns the full path from root to the current node using '/' as a separator."""
+        path = []
+        node = self
+        while node:
+            path.append(node.name)
+            node = node.parent
+        return "/".join(reversed(path))
+
+    def __str__(self, level=0, prefix="") -> str:
         """Pretty prints the tree structure using dynamically generated Unicode characters."""
         lines = []
         
@@ -73,10 +82,11 @@ class Node:
             connector = last_branch_symbol if is_last else branch_symbol
             new_prefix = prefix + (space if is_last else vertical_pipe + "  ")
             lines.append(f"{prefix}{connector} {child.name}")
-            lines.extend(child.__repr__(level + 1, new_prefix).split("\n"))
+            lines.extend(child.__str__(level + 1, new_prefix).split("\n"))
 
         return "\n".join(lines)
 
+pass
 def build_tree(paths:str) -> Node:
     root = Node("root")
     for path in paths.strip().split("\n"):
@@ -85,11 +95,9 @@ def build_tree(paths:str) -> Node:
     return root
 
 
-
-
 def reconnect(func):
     @wraps(func)
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self: 'IFClient', *args, **kwargs):
         tries = 0
         max_tries = 10
         last_error = None
@@ -156,16 +164,14 @@ class IFClient:
 
         # IFClient.command_sent += 1
         match args:
-            case (cmd, tp):
-                if isinstance(cmd, int) and isinstance(tp, int):
-                    command, Type = cmd, tp
-                else:
-                    finded = self.manifest.search(*args)
-                    if finded is None:
-                        raise ValueError(f"Command not found: {args}")
-                    elif finded.value is not None:
-                        command, Type = finded.value
-                    # command, Type = self.findfirst(*args)
+            case (cmd, tp) if all(isinstance(i, int) for i in {cmd, tp}):
+                command, Type = cmd, tp
+            case (*arg, node) if isinstance(node, Node):
+                finded = node.search(*arg)
+                if finded is None:
+                    raise ValueError(f"Command not found: {arg}")
+                elif finded.value is not None:
+                    command, Type = finded.value                
             case _:
                 finded = self.manifest.search(*args)
                 if finded is None:
@@ -184,6 +190,7 @@ class IFClient:
             return self.__class__.read_converter.get(Type)(second_response, lenght)
 
         else:
+            command_logger.info(f"{finded.str_repr()}({command}, {Type}) -> {data}")
             byte_coomand = self.__class__.write_converter.get(Type)(command, write, data)
             return self.sock.sendall(byte_coomand)
 
@@ -197,20 +204,34 @@ class IFClient:
 
 def retrive_ip_port():
     logger.info("Retriving IP and port...")
-    result = aio.run(udp_listener(), debug=True)
+    result = udp_listener()# aio.run(udp_listener(), debug=True)
     return result
 
-async def udp_listener(ip: str='0.0.0.0', port: int=15000) -> tuple[str, int]:
+
+def udp_listener(ip: str='0.0.0.0', port: int=15000) -> tuple[str, int]:
     received = False
-    sock = await asyncudp.create_socket(local_addr=(ip, port))
-    try:
+    with socket(AF_INET, SOCK_DGRAM) as sock:
+        sock.bind((ip, port))
         while not received:
-            data, _ = await sock.recvfrom()
+            data, _ = sock.recvfrom(1024)
             received = True
             if data:
                 data = loads(data.decode('utf-8'))
                 return next(filter(lambda x: x.startswith("192."), data['addresses']), None), data['port']
             else:
-                return '', -1
-    finally:
-        sock.close()
+                received = False
+
+# async def udp_listener(ip: str='0.0.0.0', port: int=15000) -> tuple[str, int]:
+#     received = False
+#     sock = await asyncudp.create_socket(local_addr=(ip, port))
+#     try:
+#         while not received:
+#             data, _ = await sock.recvfrom()
+#             received = True
+#             if data:
+#                 data = loads(data.decode('utf-8'))
+#                 return next(filter(lambda x: x.startswith("192."), data['addresses']), None), data['port']
+#             else:
+#                 return '', -1
+#     finally:
+#         sock.close()

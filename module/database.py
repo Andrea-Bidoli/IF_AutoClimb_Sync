@@ -247,10 +247,10 @@ database = {
     "DC10F": Airplane(
         icao="DC10F",
         climb_v1=250*unit.knot,
-        climb_v2=300*unit.knot,
+        climb_v2=320*unit.knot,
         climb_v3=0.82*unit.mach,
         descent_v1=0.82*unit.mach,
-        descent_v2=300*unit.knot,
+        descent_v2=320*unit.knot,
         descent_v3=250*unit.knot,
         k=0.4
     ),
