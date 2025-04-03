@@ -54,6 +54,7 @@ class Aircraft:
             )
         self.Flaps = Flaps(client)    
 
+    
     ## Aircrafs status
     @property
     def msl(self) -> Quantity:
@@ -105,7 +106,7 @@ class Aircraft:
         try:
             return round(self.client.send_command("0", "n1_target"), 2)*unit.no_unit
         except ValueError:
-            return -1*unit.dimensionless
+            return -1*unit.no_unit
     @property
     def thrust(self) -> Quantity:
         return round(self.client.send_command("0", "thrust_percentage"), 2)*unit.no_unit
@@ -330,7 +331,7 @@ class Autopilot:
 class Autothrottle:
 
     # initializer
-    def __init__(self, aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL, inputs: dict=None) -> None:
+    def __init__(self, aircraft: Aircraft, autopilot: Autopilot, fpl: IFFPL| None = None, inputs: dict=None) -> None:
         self.client = aircraft.client
         self.manifest = self.client.manifest.search("simulator")
         self.aircraft = aircraft
@@ -341,7 +342,7 @@ class Autothrottle:
         self.current_acc = None
         self.target_acc = 9 * unit.mps2  # ~1.1 knot/s
         self._target_spd: Quantity = None
-        self.flight_phase = FlightPhase.TAKE_OFF if aircraft.is_on_ground else fpl.next_wp(aircraft).flight_phase
+        self.flight_phase = FlightPhase.TAKE_OFF if aircraft.is_on_ground else fpl.next_wp(aircraft.next_index).flight_phase
         # setting inputs
         if inputs is None:
             print("Insert speed in knots or mach (<1)")
@@ -386,9 +387,11 @@ class Autothrottle:
                 case (dto, temp):
                     dto = int(dto)
                     temp = int(temp)
-                case (temp,) if temp.isdigit():
+                case (temp,) if float(temp) > 1:
                     dto = 0
-                    temp = int(temp)
+                    temp = float(temp)
+                case (temp,) if 0 < float(temp) < 1:
+                    self.TO_setting = float(temp)
                 case _: passed = True
             if not passed:
                 try:
@@ -400,13 +403,26 @@ class Autothrottle:
                 except (AttributeError, TypeError): ...
             logger.info(f"Take Off setting: {self.TO_setting:02f}")
 
+        self.above_10k = self.aircraft.msl > 10_000*unit.ft
+
         match self.flight_phase:
             case FlightPhase.TAKE_OFF:
                 self.target_spd = self.inputs.get(Spd.Vr, 0*unit.knot)
             case FlightPhase.CLIMB:
-                self.target_spd = self.inputs.get(Spd.clb_V1, 0*unit.knot)
+                if self.autopilot.SpdMode:
+                    if vt := self.inputs.get(Spd.clb_V3, 0):
+                        self.target_spd = vt
+                
+                elif self.above_10k:
+                    if vt := self.inputs.get(Spd.clb_V2, 0):
+                        self.target_spd = vt
+                
+                else:
+                    if vt := self.inputs.get(Spd.clb_V1, 0):
+                        self.target_spd = vt
+            
             case FlightPhase.CRUISE:
-                if (vt := self.inputs.get(Spd.crz_V, 0)) != 0:
+                if vt := self.inputs.get(Spd.crz_V, 0):
                     self.target_spd = vt
             case FlightPhase.DESCENT:
                 pass
@@ -438,7 +454,7 @@ class Autothrottle:
         else:
             raise ValueError("Invalid value")
         value = clip(value, 0, 1)
-        value = int(value * -2000 + 1000)
+        value = int(-2000 * value + 1000)
         self.client.send_command("throttle", self.manifest, write=True, data=value)
 
 
@@ -467,6 +483,7 @@ class Autothrottle:
                 case FlightPhase.DESCENT:
                     self._change_spd_descend()
         except Exception:...
+    
     def _change_spd_climb(self) -> None:
         spd_tol = 0.01 if self.autopilot.SpdMode else (3*unit.knot).to(unit.ms).m
         if self.autopilot.SpdMode:
@@ -559,8 +576,9 @@ class Autothrottle:
             return
         debug_logger.debug("Landing gear is down, trying to retract")
         self.target_spd = self.aircraft.airplane.climb_v1
-        sleep(0.2)
         self.aircraft.Landing_gear_toggle
+        if self.aircraft.landing_lights_status:
+            self.aircraft.Landing_Lights_toggle
         del self.TO_setting
 
 

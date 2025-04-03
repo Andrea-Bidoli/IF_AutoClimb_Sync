@@ -4,7 +4,6 @@ from .logger import logger
 from . import unit, Quantity
 from dataclasses import dataclass, field
 from itertools import pairwise
-from collections.abc import Generator
 from json import loads, load, dump
 from numpy.linalg import norm
 from io import TextIOWrapper
@@ -80,6 +79,9 @@ class Fix:
     def spd(self) -> Quantity:
         return self._spd
 
+dummy_fix = Fix("None", -1, -1, -1, float('inf'))
+dummy_fix._flight_phase = FlightPhase.NULL
+
 class IFFPL(list[Fix]):
     good_fpl: bool = True
     @classmethod
@@ -132,10 +134,10 @@ class IFFPL(list[Fix]):
                     if item.get("children"):  # If there are children, recursively yield from them
                         yield from extract_names_identifiers(item.get("children"))
                     else:
-                        yield from (item.get("name"), item.get("identifier"))
-            cls.good_fpl =  {"toc", "tod"}.issubset(map(str.lower, extract_names_identifiers()))
-        except (TypeError, KeyError):
-            logger.warning("No flight plan defined")
+                        yield from (str(item.get("name")), str(item.get("identifier")))
+            cls.good_fpl =  {"toc", "tod"}.issubset(map(str.lower, extract_names_identifiers(fpl_tmp)))
+        except (TypeError, KeyError) as e:
+            logger.warning("No flight plan defined", exc_info=True)
             return None
         if write: ...
         return cls(fpl_tmp)
@@ -247,20 +249,22 @@ class IFFPL(list[Fix]):
             for fix_1, fix_2 in pairwise(self):
                 fix_1.dist_to_next = cosine_law(fix_1, fix_2)
 
-    def vnav_wps(self, start: int = 0) -> Generator[Fix, None, None]:
-        yield from filter(lambda x: x.alt > 0, self[start:])
+    def vnav_wps(self, start: int = 0) -> tuple[Fix]:
+        return tuple(filter(lambda x: x.alt > 0, self[start:]))
 
-    def update_vnav_wps(self, aircraft: 'Aircraft') -> Generator[Fix, None, None]:
+    def update(self, aircraft: 'Aircraft'):
         tmp = self.from_str(aircraft.client.send_command("full_info"), write=True)
         self.clear()
         self.extend(tmp)
-        return self.vnav_wps(aircraft.next_index)
 
     def extend_from_index(self, data: list[Fix], index: int) -> None:
         self[index:index] = data
 
-    def next_wp(self, aircraft: 'Aircraft') -> Fix:
-        return self[aircraft.next_index]
+    def next_wp(self, index: int) -> Fix:
+        return self[index]
+
+    def next_clb_wp(self, index: int) -> Fix:
+        return next(filter(lambda x: x.flight_phase in {FlightPhase.CRUISE, FlightPhase.CLIMB} and x.alt > 0, self[index:]), dummy_fix)
 
 def angle_between_3_fix(fix1: Fix, fix2: Fix, fix3: Fix):
     p1 = array(
@@ -295,7 +299,6 @@ def angle_between_3_fix(fix1: Fix, fix2: Fix, fix3: Fix):
 
     theta = arccos(n1 @ n2)
     return min(pi - theta, theta)
-
 
 def get_bearing(fix1: Fix, fix2: Fix) -> float:
     delta_lon = fix2.lon - fix1.lon

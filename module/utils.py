@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from time import perf_counter_ns
 from functools import wraps
+from .client import IFClient, Node
 
 def time_method(method):
     @wraps(method)
@@ -56,3 +57,66 @@ id_2_icao = {
     "E175": "E175",
     "DC-10F": "DC10F",
 }
+
+
+
+from typing import Callable
+
+class IFProperty:
+    def __init__(self, command: str, get_custom_func: Callable = None, set_custom_func: Callable = None):
+        self.command = command
+        self.get_custom_func = get_custom_func
+        self.set_custom_func = set_custom_func
+
+    def __set_name__(self, owner, name):
+        self._name = "_" + name
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        
+        if self.get_custom_func is not None:
+            return self.get_custom_func(self.command)
+        return self.command
+
+    def __set__(self, instance, value):
+        if self.set_custom_func is not None:
+            value = self.set_custom_func(value)
+        print(value)
+
+
+# def attrs_to_property(cls):
+#     attrs = dir(cls)
+#     filter_attrs = filter(lambda x: not x.startswith("__") and not callable(getattr(cls, x)), attrs)
+#     client_attr: IFClient = next(filter(lambda attr: isinstance(IFClient, attr), filter_attrs))
+#     filter_attrs = filter(lambda x: not x.startswith("__") and not callable(getattr(cls, x)), attrs)
+#     manifest_attr: Node = next(filter(lambda attr: isinstance(Node, attr), filter_attrs), None)
+
+#     if client_attr is None:
+#         raise AttributeError(f"No {"IFClient":!r} attr found")
+
+#     for attrs_name, value in cls.__dict__.items():
+#         if not attrs_name.startswith("__") and not callable(value):
+#             def getter(self, cmd=value):
+#                 if manifest_attr is not None:
+#                     bin_cmd: tuple[int, int] = manifest_attr.search(cmd[:-1])            
+#                 else:
+#                     manifest: Node = next(filter(lambda _, v: isinstance(v, Node), globals().items()))
+#                     if manifest is None:
+#                         raise AttributeError(f"No {"Node":!r} attr found")
+#                     bin_cmd = manifest.search(cmd[:-1])
+#                 tmp = client_attr.send_command(*bin_cmd)
+#                 return tmp * cmd[-1]
+
+#             def setter(self, val, cmd=value):
+#                 if manifest_attr is not None:
+#                     bin_cmd: tuple[int, int] = manifest_attr.search(cmd)            
+#                 else:
+#                     manifest: Node = next(filter(lambda _, v: isinstance(v, Node), globals().items()))
+#                     if manifest is None:
+#                         raise AttributeError(f"No {"Node":!r} attr found")
+#                     bin_cmd = manifest.search(cmd)
+#                 client_attr.send_command(*bin_cmd, val)*cmd[-1]
+#             setattr(cls, attrs_name, property(getter, setter))
+
+#     return cls

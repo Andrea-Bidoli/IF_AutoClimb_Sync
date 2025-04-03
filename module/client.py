@@ -138,7 +138,7 @@ class IFClient:
         5: lambda cmd, wrt, data: pack("<i?q", cmd, wrt, data),
         -1: lambda cmd, wrt, data: pack("<i?", cmd, False),
     }
-    
+
     def __new__(cls, ip: str, port: int):
         if cls.__instance is None:
             cls.__instance = super().__new__(cls)

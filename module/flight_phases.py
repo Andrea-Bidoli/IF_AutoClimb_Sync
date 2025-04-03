@@ -10,9 +10,6 @@ from time import sleep
 from math import isclose
 
 
-dummy_fix = Fix("None", -1, -1, -1, -1)
-dummy_fix._flight_phase = FlightPhase.NULL
-    
 
 def takeoff(aircraft: Aircraft, autopilot: Autopilot, autothrottle: Autothrottle, inputs: dict[str, str]) -> None:
     if not aircraft.is_on_ground:
@@ -75,8 +72,9 @@ class Vnav:
         self.autopilot = autopilot
         self.fpl = fpl
         self.above_10k = aircraft.msl >= 10_000*unit.ft
-        self.vnav_wps = fpl.vnav_wps(self.aircraft.next_index)
-        self.climb_waypoint = next(self.vnav_wps, dummy_fix)
+        next_index = aircraft.next_index
+        self.climb_waypoint = fpl.next_clb_wp(next_index)
+        self.next_waypoint = fpl.next_wp(next_index)
         self.autothrottle = autothrottle
 
         logger.info("VNAV initialized!")
@@ -86,12 +84,18 @@ class Vnav:
         self.autothrottle.target_spd = target_speed
 
     def __call__(self) -> bool:
-        if self.aircraft.next_index > self.climb_waypoint.index:
-            self.climb_waypoint = next(self.vnav_wps, dummy_fix)
-            self.next_waypoint = self.fpl.next_wp(self.aircraft)
+        if (indx := self.aircraft.next_index) > self.climb_waypoint.index:
+            self.climb_waypoint = self.fpl.next_clb_wp(indx)
+        if indx > self.next_waypoint.index:
+            self.next_waypoint = self.fpl.next_wp(indx)
             return True
-        if not self.aircraft.is_on_ground:
-            self.autothrottle.flight_phase = self.climb_waypoint.flight_phase
+        
+        if not self.aircraft.is_on_ground and self.aircraft.agl > 50*unit.ft:
+            if self.climb_waypoint is None:
+                self.autothrottle.flight_phase = self.next_waypoint.flight_phase
+            else:
+                self.autothrottle.flight_phase = self.climb_waypoint.flight_phase
+
         match self.autothrottle.flight_phase:
             case FlightPhase.TAKE_OFF:
                 self.handle_takeoff()
@@ -135,11 +139,13 @@ class Vnav:
             self.autopilot.Vs = self.aircraft.gs * vs_sin
 
         sleep(1)
-        
+
     def handle_cruise(self):
         self.autothrottle()
+        
         delta_alt: Quantity = self.climb_waypoint.alt - self.autopilot.Alt
         target_vs: Quantity = sign(delta_alt) * max((200*unit.fpm), min((1000*unit.fpm), abs(delta_alt / Vnav.time_target)))
+
         if delta_alt == 0:
             climb_time = 0*unit.s
         else:
@@ -148,14 +154,14 @@ class Vnav:
         if ete_fix <= 0*unit.s and self.autopilot.Alt != self.climb_waypoint.alt :
             self.autopilot.Alt = self.climb_waypoint.alt
             self.autopilot.Vs = target_vs
-            self.vnav_wps = self.fpl.update_vnav_wps(self.aircraft) # not functioning right now
+            self.fpl.update(self.aircraft)
         elif ete_fix > 6 * 60*unit.s:
-            ete_fix = dist_to_fix(self.next_waypoint, self.fpl, self.aircraft).to(unit.m) / self.aircraft.gs
-            logger.info(f"ETE to {self.next_waypoint.name}: {format_time(ete_fix.m_as(unit.s))}, ETA: {datetime.now() + timedelta(seconds=ete_fix.m_as(unit.s)): %H:%M:%S}")
+            ete_fix = dist_to_fix(self.climb_waypoint, self.fpl, self.aircraft).to(unit.m) / self.aircraft.gs
+            logger.info(f"ETE to {self.climb_waypoint.name}: {format_time(ete_fix.m_as(unit.s))}, ETA: {datetime.now() + timedelta(seconds=ete_fix.m_as(unit.s)): %H:%M:%S}")
             logger.info(f"sleeping for {format_time((ete_fix*0.5).m_as(unit.s))}")
             sleep((ete_fix*0.5).m)
         else:
-            logger.info(f"ETE to {self.climb_waypoint.name}: {format_time(ete_fix.to(unit.s).m)}")
+            logger.info(f"ETE to {self.climb_waypoint.name}: {format_time(ete_fix.m_as(unit.s))}")
             sleep(10)
 
     def handle_descent(self, waypoint: Fix, sin_angle: float):
@@ -251,7 +257,7 @@ def create_Fix(Start_Fix: Fix, bearing: Quantity, distance: Quantity) -> IFFPL:
     lat2 = arcsin(sin(lat1)*cos(distance.to(unit.m)/R) + cos(lat1)*sin(distance.to(unit.m).magnitude)*cos(bearing.to(unit.rad)))
     lon2 = lon1 + arctan2(sin(bearing.to(unit.rad))*sin(distance.to(unit.m)/R)*cos(lat1.to(unit.rad)), cos(distance.to(unit.m)/R)-sin(lat1.to(unit.rad))*sin(lat2))
     return Fix("None", lat2, lon2, -1, -1)
-
+1
 def Only_Authothrottle(aircraft: Aircraft, autopilot: Autopilot, autothrottle: Autothrottle):
     logger.info("Starting autothrottle")
     while aircraft.is_on_ground:

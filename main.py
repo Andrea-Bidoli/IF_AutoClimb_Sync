@@ -16,9 +16,11 @@ def main_loop() -> None:
             logger.error("Invalid input, only AT will be used")
             only_AT = True
 
+
     client: IFClient = IFClient(ip, port)
     aircraft: Aircraft = Aircraft(client)
-    fpl: IFFPL = IFFPL.from_str(client.send_command("full_info"), write=True)
+    if not only_AT:
+        fpl: IFFPL = IFFPL.from_str(client.send_command("full_info"), write=True)
     autopilot: Autopilot = Autopilot(client)
     autothrottle = Autothrottle(aircraft, autopilot, fpl)
     vnav: Vnav = Vnav(aircraft, autopilot, autothrottle, fpl)
